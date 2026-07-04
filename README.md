@@ -4,13 +4,26 @@ This repository holds the governing documents for the Maranasi B2B outreach engi
 
 | File | What it is |
 |---|---|
-| [`SYSTEM-MAP.md`](SYSTEM-MAP.md) | **System Map v2** (2026-07-04) — the standing brief compiled from the 8-section interrogation, the deployed v1 system, and prior build/QA sessions. It is both the refactor punch-list and the rebuild spec; every decision carries its why so nothing gets re-litigated with less context later. |
-| [`EXECUTION-PROMPT.md`](EXECUTION-PROMPT.md) | The one Claude Code prompt generated from the map (its stated "next artifact"). Written for **Path A — refactor v1** (the map's recommended path), to be executed against `kurdim12/maranasi-crm` on branch `claude/maranasi-outreach-engine-c70z51`. Carries a Path B port-list appendix so it still governs if the fork decision flips to a rebuild. |
+| [`SYSTEM-MAP.md`](SYSTEM-MAP.md) | **System Map v2** (2026-07-04) — the standing brief compiled from the 8-section interrogation, the deployed v1 system, and prior build/QA sessions. Every decision carries its why so nothing gets re-litigated with less context later. |
+| [`EXECUTION-PROMPT.md`](EXECUTION-PROMPT.md) | **The active execution prompt — Path B (greenfield rebuild), the decided path.** One self-contained Claude Code prompt to build the engine from scratch in a new repository (`maranasi-engine`, placeholder name), with v1 as read-only reference only. Carries the mandatory port-list (v1's 11 guardrails), the 7-item tool-layer never-list, all 12 config defaults, six build phases ending in the hard-gated `DRY_RUN` flip, and the v1 decommission note. |
+| [`archive/EXECUTION-PROMPT-PATH-A.md`](archive/EXECUTION-PROMPT-PATH-A.md) | The superseded Path A (refactor v1) prompt, kept for the record. Do not execute. |
 
 ## Status
 
-- **Current step** (map §0): choose the path (§16). One decision open (§15.1 — the gate: run the QA fix pass + a 30-minute owner walkthrough of v1 before any rebuild code).
-- The execution prompt does not pre-empt that decision: its first phases (repo checks §14, then the QA fix pass) are explicitly path-neutral per the map itself.
-- Live system: `https://maranasi-crm.abdalrhmankurdi12.workers.dev` — `DRY_RUN=true`, zero real emails ever sent, Gmail unconnected.
+- **The fork (map §16) is decided: Path B — rebuild from scratch.** The Path B prompt
+  above is the governing build document.
+- **The gate question (map §15.1) is resolved by that decision**: there is no v1 QA
+  fix pass — v1 stays deployed and untouched as read-only reference until v2 passes
+  its Flip Gate, then gets decommissioned per the prompt's decommission note. The
+  30-minute owner walkthrough survives, retargeted to **v2 on demo data** as a Flip
+  Gate checkbox (H1) — the owners see the tool before it goes live.
+- Live v1: `https://maranasi-crm.abdalrhmankurdi12.workers.dev` — `DRY_RUN=true`,
+  zero real emails ever sent. It stays that way; v2 is born with `DRY_RUN=true` in
+  its first commit.
 
-The map is the source of truth. If the prompt and the map ever disagree, the map wins and the prompt gets fixed.
+## Precedence
+
+The map remains the decision record — its whys still govern, and the prompt embeds its
+defaults verbatim. Where the Path B prompt explicitly supersedes the map (the §16 fork,
+the §15.1 gate placement), the prompt wins. For everything else, if the prompt and the
+map ever disagree, the map wins and the prompt gets fixed.
