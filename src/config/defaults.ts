@@ -24,6 +24,8 @@ export interface Settings {
       Blank = daily sourcing pauses (audited skip); manual runs always work. */
   sourcingGeo: string
   sourcingBusinessType: string
+  /** Daily recap generation hour (UTC); default 05:00 UTC = 08:00 Amman. */
+  recapUtcHour: number
   /** Bounce breaker: warn 2% · stop 3% · floor 25 sends */
   bounceWarnPct: number
   bounceStopPct: number
@@ -58,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sourcingUtcHour: 23,
   sourcingGeo: '',
   sourcingBusinessType: '',
+  recapUtcHour: 5,
   bounceWarnPct: 2,
   bounceStopPct: 3,
   bounceFloorSends: 25,
@@ -122,6 +125,13 @@ export function validateSettings(input: Record<string, unknown>): Settings {
         throw new SettingsValidationError('sourcingBusinessType must be a string of at most 120 chars')
       }
       return v.trim()
+    })(),
+    recapUtcHour: (() => {
+      const v = s.recapUtcHour
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 23) {
+        throw new SettingsValidationError('recapUtcHour must be an integer between 0 and 23')
+      }
+      return v
     })(),
     bounceWarnPct: requirePositiveInt(s.bounceWarnPct, 'bounceWarnPct', 100),
     bounceStopPct: requirePositiveInt(s.bounceStopPct, 'bounceStopPct', 100),

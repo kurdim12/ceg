@@ -1,6 +1,9 @@
 import { getGmailFor, getGmailReaderFor, getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
 import { logActivity } from '../domain/activities'
 import { processInboundMessage } from '../inbox/process'
+import { LAST_TICK_KEY } from '../ops/alerts'
+import { buildDailyRecap } from '../ops/recap'
+import { runRecyclers } from '../ops/recyclers'
 import { runSourcing } from '../pipeline/source-run'
 import { advanceDueEnrollments } from '../sequence/enroll'
 import { autoApprovePastReview } from '../sequence/review-mode'
@@ -21,6 +24,7 @@ type CronEnv = { DB: D1Database; KV: KVNamespace; DRY_RUN: string }
  */
 export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
   const settings = await getSettings(env.KV)
+  await env.KV.put(LAST_TICK_KEY, now.toISOString())
 
   await resumePausedEnrollments(env.DB, now)
   const advanced = await advanceDueEnrollments(env.DB, settings, now)
@@ -41,7 +45,20 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
   })
   await pollConnectedInboxes(env, settings, now)
 
+  if (now.getUTCHours() === settings.recapUtcHour) {
+    const recap = await buildDailyRecap(env.DB, env.KV, settings, now)
+    await env.KV.put(`recap:${recap.date}`, JSON.stringify(recap))
+    await logActivity(env.DB, {
+      entityType: 'system',
+      actor: 'system:recap',
+      kind: 'recap_generated',
+      detail: { date: recap.date, alarms: recap.alarms.length },
+    })
+  }
+
   if (now.getUTCHours() !== settings.sourcingUtcHour) return
+
+  await runRecyclers(env.DB, settings, now)
 
   const places = await getPlaces(env.KV)
   if (!places) {

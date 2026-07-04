@@ -20,25 +20,16 @@ function esc(text) {
   return div.innerHTML
 }
 
-export async function renderLeads(root, me, reboot) {
+export async function renderLeads(root) {
   root.innerHTML = `
-    <div class="topbar">
-      <div>
-        <h1>Leads</h1>
-        <div class="who">Signed in as ${esc(me.name)} (${esc(me.email)})</div>
-      </div>
-      <div>
-        <button class="secondary" id="demo-reset">Regenerate demo data</button>
-        <button class="secondary" id="logout">Sign out</button>
-      </div>
+    <div class="view-actions">
+      <button class="secondary" id="demo-reset">Regenerate demo data</button>
+      <button class="secondary" id="run-sourcing">Find new leads…</button>
     </div>
+    <div id="sourcing-form"></div>
     <div id="lead-table">Loading…</div>
     <div id="lead-detail"></div>`
 
-  root.querySelector('#logout').addEventListener('click', async () => {
-    await api.post('/api/auth/logout')
-    reboot()
-  })
   root.querySelector('#demo-reset').addEventListener('click', async (e) => {
     e.target.disabled = true
     try {
@@ -52,12 +43,39 @@ export async function renderLeads(root, me, reboot) {
     }
   })
 
+  root.querySelector('#run-sourcing').addEventListener('click', () => {
+    const holder = root.querySelector('#sourcing-form')
+    holder.innerHTML = `
+      <div class="panel form-row">
+        <label>Where (city or region)<input id="src-geo" placeholder="e.g. Lisbon" /></label>
+        <label>Business type<input id="src-type" placeholder="e.g. specialty coffee roasters" /></label>
+        <label>How many<input id="src-count" type="number" value="10" min="1" max="100" /></label>
+        <button id="src-go">Run sourcing</button>
+      </div>`
+    holder.querySelector('#src-go').addEventListener('click', async (e) => {
+      e.target.disabled = true
+      try {
+        const result = await api.post('/api/sourcing/run', {
+          geo: holder.querySelector('#src-geo').value,
+          businessType: holder.querySelector('#src-type').value,
+          count: Number(holder.querySelector('#src-count').value),
+        })
+        toast(`Sourcing done: ${result.tally.created} new, ${result.tally.deduped} duplicates skipped`, 'success')
+        holder.innerHTML = ''
+        await drawTable()
+      } catch (err) {
+        toast(err.message, 'error')
+        e.target.disabled = false
+      }
+    })
+  })
+
   async function drawTable() {
     const { companies } = await api.get('/api/companies')
     const container = root.querySelector('#lead-table')
     if (companies.length === 0) {
       container.innerHTML =
-        '<div class="panel">No leads yet. Regenerate demo data to explore, or run sourcing once it lands.</div>'
+        '<div class="panel">No leads yet. Regenerate demo data to explore, or run sourcing.</div>'
       return
     }
     container.innerHTML = `

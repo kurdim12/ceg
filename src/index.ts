@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { authRoutes } from './http/auth-routes'
 import { apiRoutes } from './http/api-routes'
 import { gmailCallback, gmailRoutes } from './http/gmail-routes'
+import { opsRoutes } from './http/ops-routes'
 import { runCronTick } from './schedule/cron'
 import type { Env } from './env'
 
@@ -14,6 +15,7 @@ app.get('/health', (c) =>
 app.route('/api/auth', authRoutes)
 app.route('/api/auth/gmail', gmailCallback)
 app.route('/api/gmail', gmailRoutes)
+app.route('/api', opsRoutes)
 app.route('/api', apiRoutes)
 
 export default {
