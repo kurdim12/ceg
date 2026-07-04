@@ -23,6 +23,12 @@ This repository holds the governing documents for the Maranasi B2B outreach engi
   its first commit.
 - The key run (above) can happen any time before the maintainer's July travel —
   it front-loads H3 so the flip gate later waits on a paste, not a signup.
+- **A run directive (keys-later mode) is ACTIVE in the execution prompt**: the build
+  runs all phases in one continuous pass, mock-first behind adapter interfaces, never
+  stalling on human steps — accumulating `PENDING-HUMAN` items instead. Phase 6 runs
+  as *evaluation*: the run ends at a fully evaluated flip gate in `DRY_RUN`, plus one
+  consolidated table of the human actions between it and live. The flip itself still
+  requires every box green.
 
 ## Precedence
 

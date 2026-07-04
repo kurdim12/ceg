@@ -69,6 +69,29 @@ re-litigate any decision; do not soften any guardrail.
 5. Verify with real commands: `npx vitest run`, `npx tsc --noEmit`,
    `npx wrangler deploy --dry-run`, the dialog grep above.
 
+## Run directive — keys-later mode (ACTIVE)
+
+Execute all phases in one continuous run. Do not wait on any human step. Specifics:
+
+1. **Mock-first externals.** Every external service (ZeroBounce, OpenRouter, Places,
+   Gmail) sits behind an interface with a fixture/mock implementation used by all
+   tests. The real adapter ships in the same build item, activated only by its key
+   appearing in settings — so keys dropped in later require **zero code changes**.
+2. **Deployed behavior with a key unset = fail-safe, never fake.** That subsystem
+   holds, shows a clear dashboard banner, fires the alert path, and never simulates
+   success. No placeholder keys, no fabricated API responses outside test fixtures.
+3. **Accumulate, don't stall.** Emit every `HUMAN STEP` the moment it's ready — exact
+   field names per the key-name contract — tag it `PENDING-HUMAN`, keep building.
+   Gmail's OAuth **client credentials** (Google Cloud client ID/secret) count as a key
+   too: mock the flow in tests, emit the step with the exact console path.
+4. **The floor is the flip.** Phase 6 runs as *evaluation*: produce the gate checklist
+   with every box marked GREEN or PENDING-HUMAN. `DRY_RUN` stays true. The flip
+   happens only after keys and approvals land and every box is green — flipping with
+   an unchecked box remains a failure of this prompt.
+5. **End-of-run report**: phase-by-phase done/open, final test count vs. baseline, and
+   one consolidated PENDING-HUMAN table (H1–H5 plus any credential steps), each row
+   with the exact one-paste or one-click action that closes it.
+
 ---
 
 ## Phase 1 — Foundation (schema, auth, audit, settings)
