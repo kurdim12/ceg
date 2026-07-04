@@ -13,6 +13,10 @@ crons = ["0 * * * *"]
 DRY_RUN = "true"
 PRODUCT_NAME = "Maranasi Engine"
 
+[assets]
+directory = "public"
+binding = "ASSETS"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "maranasi-engine"

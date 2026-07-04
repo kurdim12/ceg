@@ -5,4 +5,6 @@ export interface Env {
   /** "true" until the Phase 6 Flip Gate passes with every box green. */
   DRY_RUN: string
   PRODUCT_NAME: string
+  /** Wrangler secret gating the one-time owner-account bootstrap. Unset = setup disabled. */
+  SETUP_TOKEN?: string
 }
