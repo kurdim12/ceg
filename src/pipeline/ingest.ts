@@ -1,5 +1,6 @@
 import type { SiteFetcher, SourcedBusiness, VerifierAdapter } from '../adapters/types'
-import { domainOf, extractEmails } from '../crawler/extract'
+import { domainOf } from '../crawler/extract'
+import { crawlForEmails } from '../crawler/crawl'
 import { logActivity } from '../domain/activities'
 import { transitionStage } from '../domain/transitions'
 import { enrollContact } from '../sequence/enroll'
@@ -83,8 +84,7 @@ export async function ingestBusiness(
     })
     return { kind: 'held', companyId, reason: 'no_crawler' }
   }
-  const html = biz.website ? await deps.fetchSite.fetchPage(biz.website) : null
-  const emails = html ? extractEmails(html, 3) : []
+  const emails = biz.website ? await crawlForEmails(deps.fetchSite, biz.website, 3) : []
   await logActivity(db, {
     entityType: 'company',
     entityId: companyId,

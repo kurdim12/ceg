@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
+import { getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
 import { SettingsValidationError } from '../config/defaults'
 import { getSettings, isSecretName, secretStatus, setSecret, updateSettings } from '../settings/store'
 import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
+import { runSourcing } from '../pipeline/source-run'
 import type { Env } from '../env'
 import { requireAuth, type AuthVars } from './middleware'
 
@@ -70,6 +72,52 @@ apiRoutes.get('/companies/:id/activities', async (c) => {
     .bind(id)
     .all()
   return c.json({ activities: rows.results })
+})
+
+apiRoutes.get('/status', async (c) => {
+  const [settings, secrets] = await Promise.all([getSettings(c.env.KV), secretStatus(c.env.KV)])
+  return c.json({
+    dryRun: c.env.DRY_RUN === 'true',
+    subsystems: {
+      verifier: secrets.ZEROBOUNCE_API_KEY ? 'live' : 'holding',
+      places: secrets.GOOGLE_PLACES_API_KEY ? 'live' : 'holding',
+      llm: secrets.OPENROUTER_API_KEY ? 'live' : 'holding',
+      gmailClient: secrets.GMAIL_CLIENT_ID && secrets.GMAIL_CLIENT_SECRET ? 'configured' : 'holding',
+      crawler: 'live',
+      dailySourcing:
+        settings.sourcingGeo !== '' && settings.sourcingBusinessType !== ''
+          ? 'configured'
+          : 'unconfigured',
+    },
+  })
+})
+
+/** Manual sourcing run — fully parameterized by the human triggering it. */
+apiRoutes.post('/sourcing/run', async (c) => {
+  const body = await c.req.json<{ geo?: string; businessType?: string; count?: number }>()
+  const geo = (body.geo ?? '').trim()
+  const businessType = (body.businessType ?? '').trim()
+  const count = body.count
+  if (geo === '' || geo.length > 120 || businessType === '' || businessType.length > 120) {
+    return c.json({ error: 'geo and businessType are required (max 120 chars)' }, 400)
+  }
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 100) {
+    return c.json({ error: 'count must be an integer between 1 and 100' }, 400)
+  }
+
+  const places = await getPlaces(c.env.KV)
+  if (!places) {
+    // Fail-safe, never fake: no key, no sourcing, clear reason.
+    return c.json({ error: 'GOOGLE_PLACES_API_KEY unset — sourcing is holding' }, 409)
+  }
+  const tally = await runSourcing(
+    c.env.DB,
+    { places, fetchSite: getSiteFetcher(), verifier: await getVerifier(c.env.KV) },
+    { geo, businessType, count },
+    new Date(),
+    `user:${c.get('session').userId}`,
+  )
+  return c.json({ ok: true, tally })
 })
 
 apiRoutes.post('/demo/reset', async (c) => {

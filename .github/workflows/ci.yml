@@ -19,5 +19,7 @@ jobs:
         run: npm run test
       - name: Zero native dialogs
         run: npm run check:dialogs
+      - name: No geography hardcoding
+        run: npm run check:geo
       - name: Worker builds
         run: npx wrangler deploy --dry-run

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { authRoutes } from './http/auth-routes'
 import { apiRoutes } from './http/api-routes'
+import { runCronTick } from './schedule/cron'
 import type { Env } from './env'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -14,8 +15,7 @@ app.route('/api', apiRoutes)
 
 export default {
   fetch: app.fetch,
-  async scheduled(_controller: ScheduledController, _env: Env, _ctx: ExecutionContext) {
-    // Internal dispatcher lands in Phase 3: hourly send dispatch,
-    // sourcing at 23:00 UTC (02:00 Amman).
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runCronTick(env, new Date(controller.scheduledTime)))
   },
 } satisfies ExportedHandler<Env>

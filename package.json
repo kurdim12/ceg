@@ -8,7 +8,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check:dialogs": "./scripts/check-dialogs.sh",
-    "check": "npm run typecheck && npm run test && npm run check:dialogs"
+    "check:geo": "./scripts/check-geo.sh",
+    "check": "npm run typecheck && npm run test && npm run check:dialogs && npm run check:geo"
   },
   "dependencies": {
     "hono": "^4.6.0"

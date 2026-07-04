@@ -20,6 +20,10 @@ export interface Settings {
   sourcingVolumePerDay: number
   /** Sourcing cron: 02:00 Amman (UTC+3, no DST) = 23:00 UTC · dispatcher hourly */
   sourcingUtcHour: number
+  /** Daily sourcing targets — owner-set, nothing geographic is baked in.
+      Blank = daily sourcing pauses (audited skip); manual runs always work. */
+  sourcingGeo: string
+  sourcingBusinessType: string
   /** Bounce breaker: warn 2% · stop 3% · floor 25 sends */
   bounceWarnPct: number
   bounceStopPct: number
@@ -52,6 +56,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sendWeekdaysOnly: true,
   sourcingVolumePerDay: 25,
   sourcingUtcHour: 23,
+  sourcingGeo: '',
+  sourcingBusinessType: '',
   bounceWarnPct: 2,
   bounceStopPct: 3,
   bounceFloorSends: 25,
@@ -102,6 +108,20 @@ export function validateSettings(input: Record<string, unknown>): Settings {
         throw new SettingsValidationError('sourcingUtcHour must be an integer between 0 and 23')
       }
       return v
+    })(),
+    sourcingGeo: (() => {
+      const v = s.sourcingGeo
+      if (typeof v !== 'string' || v.length > 120) {
+        throw new SettingsValidationError('sourcingGeo must be a string of at most 120 chars')
+      }
+      return v.trim()
+    })(),
+    sourcingBusinessType: (() => {
+      const v = s.sourcingBusinessType
+      if (typeof v !== 'string' || v.length > 120) {
+        throw new SettingsValidationError('sourcingBusinessType must be a string of at most 120 chars')
+      }
+      return v.trim()
     })(),
     bounceWarnPct: requirePositiveInt(s.bounceWarnPct, 'bounceWarnPct', 100),
     bounceStopPct: requirePositiveInt(s.bounceStopPct, 'bounceStopPct', 100),
