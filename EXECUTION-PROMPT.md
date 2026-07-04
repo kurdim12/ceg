@@ -20,6 +20,12 @@ re-litigate any decision; do not soften any guardrail.
   wholesale copying; no v1 defects imported.
 - **Born safe**: `DRY_RUN=true` is in the very first commit and stays on until the
   Flip Gate (Phase 6). Zero real emails before every box is checked.
+- **Maintainer-side keys** are pre-provisioned per `KEY-RUN-PROMPT.md` under
+  password-manager labels `Maranasi v2 — ZEROBOUNCE_API_KEY / OPENROUTER_API_KEY /
+  GOOGLE_PLACES_API_KEY`. Adopt `ZEROBOUNCE_API_KEY`, `OPENROUTER_API_KEY`, and
+  `GOOGLE_PLACES_API_KEY` as the exact secret/settings field names, and reference the
+  matching label in every related `HUMAN STEP` — labels, fields, and secrets stay
+  one-to-one.
 - **Users**: the two Maranasi owners operate this daily. Both admins, both
   **non-technical** — polish and safety rails are launch requirements. The maintainer
   (Abdelrahman) will NOT use the dashboard; Gmail OAuth lands on the **owners'**
