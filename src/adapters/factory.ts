@@ -30,6 +30,28 @@ export async function getLlm(kv: KVNamespace): Promise<LlmAdapter | null> {
   return key ? openRouterAdapter(key) : null
 }
 
+/** Inbox reader for one connected owner; same holding rules as the sender. */
+export async function getGmailReaderFor(
+  db: D1Database,
+  kv: KVNamespace,
+  userId: number,
+): Promise<import('./gmail-reader').GmailReaderAdapter | null> {
+  const [clientId, clientSecret] = await Promise.all([
+    getSecret(kv, 'GMAIL_CLIENT_ID'),
+    getSecret(kv, 'GMAIL_CLIENT_SECRET'),
+  ])
+  if (!clientId || !clientSecret) return null
+  const tokens = await kv.get(tokensKey(userId))
+  if (!tokens) return null
+  const user = await db
+    .prepare('SELECT gmail_connected FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ gmail_connected: number }>()
+  if (!user || user.gmail_connected !== 1) return null
+  const { gmailReaderFor } = await import('./gmail-reader')
+  return gmailReaderFor(kv, userId, clientId, clientSecret)
+}
+
 /**
  * Send adapter for one owner inbox. Null (→ hold) unless BOTH the OAuth
  * client credentials are configured AND this owner completed their grant.

@@ -1,5 +1,7 @@
 import { Hono } from 'hono'
-import { getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
+import { getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
+import { confirmBulk } from '../agent/registry'
+import { runAgentChat } from '../agent/loop'
 import { SettingsValidationError } from '../config/defaults'
 import { getSettings, isSecretName, secretStatus, setSecret, updateSettings } from '../settings/store'
 import { resetDemoData } from '../demo/seed'
@@ -195,6 +197,62 @@ apiRoutes.put('/me/booking-link', async (c) => {
     detail: { set: Boolean(url) },
   })
   return c.json({ ok: true })
+})
+
+/** Chat with the CRM agent. It acts only through its tool registry. */
+apiRoutes.post('/agent/chat', async (c) => {
+  const { message, history } = await c.req.json<{
+    message?: string
+    history?: Array<{ role: 'user' | 'assistant'; text: string }>
+  }>()
+  if (!message || message.trim() === '' || message.length > 4000) {
+    return c.json({ error: 'message required (max 4000 chars)' }, 400)
+  }
+  const turn = await runAgentChat(
+    {
+      db: c.env.DB,
+      kv: c.env.KV,
+      llm: await getLlm(c.env.KV),
+      userId: c.get('session').userId,
+    },
+    message,
+    Array.isArray(history) ? history : [],
+  )
+  return c.json(turn)
+})
+
+/** Owner confirmation for an agent-prepared bulk operation (>20 records). */
+apiRoutes.post('/agent/bulk-confirm', async (c) => {
+  const { token } = await c.req.json<{ token?: string }>()
+  if (!token) return c.json({ error: 'token required' }, 400)
+  const result = await confirmBulk(
+    c.env.DB, c.env.KV, token, `user:${c.get('session').userId}`,
+  )
+  return c.json(result, result.ok ? 200 : 410)
+})
+
+apiRoutes.get('/inbox', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT m.id, m.subject, m.triage, m.created_at AS createdAt,
+            c.name AS companyName, c.id AS companyId,
+            ct.email AS fromEmail
+     FROM email_messages m
+     JOIN companies c ON c.id = m.company_id
+     JOIN contacts ct ON ct.id = m.contact_id
+     WHERE m.direction = 'inbound'
+     ORDER BY m.id DESC LIMIT 100`,
+  ).all()
+  return c.json({ inbound: rows.results })
+})
+
+apiRoutes.get('/drops', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT d.id, d.company_id AS companyId, c.name AS companyName,
+            d.reason, d.status, d.created_at AS createdAt
+     FROM drop_requests d JOIN companies c ON c.id = d.company_id
+     WHERE d.status = 'pending' ORDER BY d.id`,
+  ).all()
+  return c.json({ drops: rows.results })
 })
 
 apiRoutes.post('/demo/reset', async (c) => {

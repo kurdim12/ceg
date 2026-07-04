@@ -1,10 +1,12 @@
-import { getGmailFor, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
+import { getGmailFor, getGmailReaderFor, getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
 import { logActivity } from '../domain/activities'
+import { processInboundMessage } from '../inbox/process'
 import { runSourcing } from '../pipeline/source-run'
 import { advanceDueEnrollments } from '../sequence/enroll'
 import { autoApprovePastReview } from '../sequence/review-mode'
 import { processApprovedSends, resumePausedEnrollments } from '../sequence/send'
 import { getSettings } from '../settings/store'
+import type { Settings } from '../config/defaults'
 
 type CronEnv = { DB: D1Database; KV: KVNamespace; DRY_RUN: string }
 
@@ -37,6 +39,7 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
     gmailFor: (userId) => getGmailFor(env.DB, env.KV, userId),
     now,
   })
+  await pollConnectedInboxes(env, settings, now)
 
   if (now.getUTCHours() !== settings.sourcingUtcHour) return
 
@@ -75,4 +78,53 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
     now,
     'system:sourcing',
   )
+}
+
+/**
+ * Reads each connected owner inbox and runs new messages through triage.
+ * Not-connected inboxes are skipped quietly — /api/status already shows
+ * them as holding; a failing poll on a connected inbox IS audited.
+ */
+async function pollConnectedInboxes(
+  env: CronEnv,
+  settings: Settings,
+  now: Date,
+): Promise<void> {
+  const owners = await env.DB.prepare(
+    `SELECT id FROM users WHERE role = 'owner_admin' AND gmail_connected = 1`,
+  ).all<{ id: number }>()
+  const llm = await getLlm(env.KV)
+
+  for (const owner of owners.results) {
+    const reader = await getGmailReaderFor(env.DB, env.KV, owner.id)
+    if (!reader) continue
+    const cursorKey = `gmail:inbox_cursor:${owner.id}`
+    try {
+      const cursorRaw = await env.KV.get(cursorKey)
+      const { messages, cursor } = await reader.listNewInbound(
+        cursorRaw ? Number(cursorRaw) : null,
+      )
+      for (const msg of messages) {
+        await processInboundMessage(
+          env.DB,
+          env.KV,
+          { llm, settings, now },
+          {
+            fromEmail: msg.fromEmail,
+            subject: msg.subject,
+            body: msg.body,
+            toUserId: owner.id,
+          },
+        )
+      }
+      if (cursor !== null) await env.KV.put(cursorKey, String(cursor))
+    } catch (err) {
+      await logActivity(env.DB, {
+        entityType: 'system',
+        actor: 'system:inbox',
+        kind: 'inbox_poll_failed',
+        detail: { ownerId: owner.id, error: (err as Error).message.slice(0, 300) },
+      })
+    }
+  }
 }

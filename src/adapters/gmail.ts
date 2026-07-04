@@ -45,7 +45,11 @@ export function gmailAuthUrl(args: {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set(
     'scope',
-    'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
+    [
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/userinfo.email',
+    ].join(' '),
   )
   url.searchParams.set('access_type', 'offline')
   url.searchParams.set('prompt', 'consent')
@@ -74,6 +78,35 @@ async function refreshAccessToken(
   return (await res.json()) as { access_token: string; expires_in: number }
 }
 
+/** Shared by the send adapter and the inbox reader. */
+export async function getAccessToken(
+  kv: KVNamespace,
+  userId: number,
+  clientId: string,
+  clientSecret: string,
+  now: Date,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  const raw = await kv.get(tokensKey(userId))
+  if (!raw) throw new Error(`no gmail tokens for user ${userId}`)
+  const tokens = JSON.parse(raw) as GmailTokens
+  if (
+    tokens.access_token &&
+    tokens.access_expires_at &&
+    new Date(tokens.access_expires_at).getTime() - 60_000 > now.getTime()
+  ) {
+    return tokens.access_token
+  }
+  const refreshed = await refreshAccessToken(tokens, clientId, clientSecret, fetcher)
+  const next: GmailTokens = {
+    ...tokens,
+    access_token: refreshed.access_token,
+    access_expires_at: new Date(now.getTime() + refreshed.expires_in * 1000).toISOString(),
+  }
+  await kv.put(tokensKey(userId), JSON.stringify(next))
+  return refreshed.access_token
+}
+
 /**
  * Gmail send adapter for one connected owner inbox. Only the sequence
  * engine holds a reference to this — the agent has no send tool at all.
@@ -86,26 +119,8 @@ export function gmailAdapterFor(
   clientSecret: string,
   fetcher: typeof fetch = fetch,
 ): GmailAdapter {
-  async function accessToken(now: Date): Promise<string> {
-    const raw = await kv.get(tokensKey(userId))
-    if (!raw) throw new Error(`no gmail tokens for user ${userId}`)
-    const tokens = JSON.parse(raw) as GmailTokens
-    if (
-      tokens.access_token &&
-      tokens.access_expires_at &&
-      new Date(tokens.access_expires_at).getTime() - 60_000 > now.getTime()
-    ) {
-      return tokens.access_token
-    }
-    const refreshed = await refreshAccessToken(tokens, clientId, clientSecret, fetcher)
-    const next: GmailTokens = {
-      ...tokens,
-      access_token: refreshed.access_token,
-      access_expires_at: new Date(now.getTime() + refreshed.expires_in * 1000).toISOString(),
-    }
-    await kv.put(tokensKey(userId), JSON.stringify(next))
-    return refreshed.access_token
-  }
+  const accessToken = (now: Date) =>
+    getAccessToken(kv, userId, clientId, clientSecret, now, fetcher)
 
   return {
     async send({ to, subject, body }) {
