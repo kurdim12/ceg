@@ -176,17 +176,17 @@ describe('hourly cron tick', () => {
   it('holds daily sourcing without the key, audibly, at the sourcing hour only', async () => {
     await createOwners()
     // Not the sourcing hour: no sourcing activity at all.
-    await runCronTick({ DB: env.DB, KV: env.KV }, new Date('2026-07-07T10:00:00Z'))
+    await runCronTick({ DB: env.DB, KV: env.KV, DRY_RUN: env.DRY_RUN }, new Date('2026-07-07T10:00:00Z'))
     expect(await countRows('activities', "kind IN ('sourcing_held','sourcing_skipped')")).toBe(0)
     // Sourcing hour (23:00 UTC = 02:00 Amman) with no key: audited hold.
-    await runCronTick({ DB: env.DB, KV: env.KV }, new Date('2026-07-07T23:00:00Z'))
+    await runCronTick({ DB: env.DB, KV: env.KV, DRY_RUN: env.DRY_RUN }, new Date('2026-07-07T23:00:00Z'))
     expect(await countRows('activities', "kind = 'sourcing_held'")).toBe(1)
   })
 
   it('skips (audited) when key present but targets unconfigured', async () => {
     await createOwners()
     await env.KV.put('secret:GOOGLE_PLACES_API_KEY', 'places-test-key')
-    await runCronTick({ DB: env.DB, KV: env.KV }, new Date('2026-07-07T23:00:00Z'))
+    await runCronTick({ DB: env.DB, KV: env.KV, DRY_RUN: env.DRY_RUN }, new Date('2026-07-07T23:00:00Z'))
     expect(await countRows('activities', "kind = 'sourcing_skipped'")).toBe(1)
   })
 })

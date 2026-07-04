@@ -5,6 +5,8 @@ import { getSettings, isSecretName, secretStatus, setSecret, updateSettings } fr
 import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
 import { runSourcing } from '../pipeline/source-run'
+import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breaker'
+import { approveDraft, approvedOutboundCount, isReviewModeActive, REVIEW_MODE_THRESHOLD } from '../sequence/review-mode'
 import type { Env } from '../env'
 import { requireAuth, type AuthVars } from './middleware'
 
@@ -118,6 +120,81 @@ apiRoutes.post('/sourcing/run', async (c) => {
     `user:${c.get('session').userId}`,
   )
   return c.json({ ok: true, tally })
+})
+
+/** Outbound drafts awaiting owner review (first-20 mode and reply drafts). */
+apiRoutes.get('/messages/drafts', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT m.id, m.step, m.subject, m.body, m.to_email AS toEmail,
+            m.created_at AS createdAt, c.name AS companyName, c.id AS companyId,
+            u.name AS senderName
+     FROM email_messages m
+     JOIN companies c ON c.id = m.company_id
+     LEFT JOIN users u ON u.id = m.from_user_id
+     WHERE m.status = 'draft' AND m.direction = 'outbound'
+     ORDER BY m.created_at
+     LIMIT 100`,
+  ).all()
+  return c.json({ drafts: rows.results })
+})
+
+apiRoutes.post('/messages/:id/approve', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const ok = await approveDraft(c.env.DB, id, `user:${c.get('session').userId}`, new Date())
+  if (!ok) return c.json({ error: 'not a pending draft' }, 409)
+  return c.json({
+    ok: true,
+    reviewMode: {
+      active: await isReviewModeActive(c.env.DB),
+      approved: await approvedOutboundCount(c.env.DB),
+      threshold: REVIEW_MODE_THRESHOLD,
+    },
+  })
+})
+
+apiRoutes.get('/review-status', async (c) => {
+  return c.json({
+    active: await isReviewModeActive(c.env.DB),
+    approved: await approvedOutboundCount(c.env.DB),
+    threshold: REVIEW_MODE_THRESHOLD,
+  })
+})
+
+apiRoutes.get('/breaker', async (c) => {
+  const [state, settings] = await Promise.all([getBreaker(c.env.KV), getSettings(c.env.KV)])
+  const verdict = await evaluateBounceRate(c.env.DB, settings, new Date())
+  return c.json({ state, verdict })
+})
+
+/** Human-only breaker reset after investigation; audited. */
+apiRoutes.post('/breaker/reset', async (c) => {
+  await resetBreaker(c.env.DB, c.env.KV, `user:${c.get('session').userId}`)
+  return c.json({ ok: true })
+})
+
+apiRoutes.put('/me/booking-link', async (c) => {
+  const { url } = await c.req.json<{ url?: string }>()
+  if (url !== '' && url !== undefined) {
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'https:') throw new Error('not https')
+    } catch {
+      return c.json({ error: 'booking link must be a valid https URL (or blank to clear)' }, 400)
+    }
+  }
+  const userId = c.get('session').userId
+  await c.env.DB.prepare('UPDATE users SET booking_link = ? WHERE id = ?')
+    .bind(url === '' ? null : (url ?? null), userId)
+    .run()
+  await logActivity(c.env.DB, {
+    entityType: 'user',
+    entityId: userId,
+    actor: `user:${userId}`,
+    kind: 'booking_link_set',
+    detail: { set: Boolean(url) },
+  })
+  return c.json({ ok: true })
 })
 
 apiRoutes.post('/demo/reset', async (c) => {
