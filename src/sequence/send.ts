@@ -21,6 +21,8 @@ interface ApprovedMessage {
   body: string
   from_user_id: number | null
   timezone: string | null
+  enrollment_id: number | null
+  email_status: string
 }
 
 export interface SendTally {
@@ -58,9 +60,10 @@ export async function processApprovedSends(
   const approved = await db
     .prepare(
       `SELECT m.id, m.company_id, m.contact_id, m.to_email, m.subject, m.body,
-              m.from_user_id, c.timezone
+              m.from_user_id, m.enrollment_id, c.timezone, ct.email_status
        FROM email_messages m
        JOIN companies c ON c.id = m.company_id
+       JOIN contacts ct ON ct.id = m.contact_id
        WHERE m.status = 'approved' AND m.direction = 'outbound'
        ORDER BY m.approved_at
        LIMIT 50`,
@@ -89,6 +92,25 @@ export async function processApprovedSends(
         detail: { messageId: msg.id },
       })
       tally.suppressed++
+      continue
+    }
+
+    // Verify-before-send holds for sequence emails end to end: only a
+    // contact whose email verified 'valid' may receive one. (Reply drafts
+    // answer a human who just wrote from that address.)
+    if (msg.enrollment_id !== null && msg.email_status !== 'valid') {
+      await db
+        .prepare(`UPDATE email_messages SET status = 'cancelled' WHERE id = ?`)
+        .bind(msg.id)
+        .run()
+      await logActivity(db, {
+        entityType: 'contact',
+        entityId: msg.contact_id,
+        actor: 'system:sender',
+        kind: 'send_cancelled_unverified',
+        detail: { messageId: msg.id, emailStatus: msg.email_status },
+      })
+      tally.held++
       continue
     }
 

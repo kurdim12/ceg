@@ -17,15 +17,17 @@ PRODUCT_NAME = "Maranasi Engine"
 directory = "public"
 binding = "ASSETS"
 
+# Real resources, provisioned 2026-07-04 on the maintainer's account.
+# All four migrations are already applied and recorded in d1_migrations.
 [[d1_databases]]
 binding = "DB"
 database_name = "maranasi-engine"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "ee6688e2-7188-419f-8ba7-b319bac32479"
 migrations_dir = "migrations"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "0000000000000000000000000000000000"
+id = "05ebc4ec38164d07a46323c8ff692782"
 
 [[r2_buckets]]
 binding = "R2"

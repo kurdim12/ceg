@@ -1,17 +1,19 @@
 import type { Settings } from '../config/defaults'
 import { logActivity } from '../domain/activities'
+import { readStage, transitionStage } from '../domain/transitions'
 import { isInSendWindow } from '../schedule/window'
 import { renderStep } from './templates'
 
 /**
- * Enrolls a contact into the email sequence. Structural guards: one active
- * enrollment per contact (unique index) and one contact per company
- * in-sequence at a time (checked here; the stagger delay for the NEXT
- * contact is applied when this enrollment ends, map §3).
+ * Enrolls a contact into the email sequence. Guards (map §3): one active
+ * enrollment per contact (unique index), one contact per company
+ * in-sequence at a time, and a 3–4 day stagger after the previous
+ * contact's enrollment ended — three cold emails from one domain in a
+ * morning reads as a spam run.
  */
 export async function enrollContact(
   db: D1Database,
-  args: { companyId: number; contactId: number; actor: string; now: Date },
+  args: { companyId: number; contactId: number; actor: string; now: Date; settings?: Settings },
 ): Promise<number> {
   const activeForCompany = await db
     .prepare(
@@ -21,6 +23,23 @@ export async function enrollContact(
     .first<{ n: number }>()
   if ((activeForCompany?.n ?? 0) > 0) {
     throw new Error(`company ${args.companyId} already has a contact in sequence`)
+  }
+
+  if (args.settings) {
+    const staggerDays = args.settings.contactStaggerMinDays
+    const recent = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM sequence_enrollments
+         WHERE company_id = ? AND contact_id != ? AND status != 'active'
+           AND updated_at > datetime(?, '-' || ? || ' days')`,
+      )
+      .bind(args.companyId, args.contactId, args.now.toISOString(), staggerDays)
+      .first<{ n: number }>()
+    if ((recent?.n ?? 0) > 0) {
+      throw new Error(
+        `contact stagger: another contact at company ${args.companyId} finished a sequence less than ${staggerDays} days ago`,
+      )
+    }
   }
 
   const row = await db
@@ -102,6 +121,19 @@ export async function advanceDueEnrollments(
         kind: 'sequence_exhausted',
         detail: { enrollmentId: row.id },
       })
+      // Email exhausted with no reply → the LEAD parks as
+      // unresponsive_email, flagged for the call queue. Never dropped.
+      const state = await readStage(db, row.company_id)
+      if (state?.stage === 'email_sequence') {
+        await transitionStage(db, {
+          companyId: row.company_id,
+          from: 'email_sequence',
+          to: 'unresponsive_email',
+          expectedVersion: state.version,
+          actor: 'system:dispatcher',
+          detail: { reason: 'sequence exhausted, no reply' },
+        })
+      }
       continue
     }
 

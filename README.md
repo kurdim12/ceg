@@ -19,6 +19,11 @@ against real D1/KV bindings via the Cloudflare workers pool.
 
 ## Status
 
+- **The build ran on 2026-07-04.** All six phases executed; 88 tests (v1 baseline: 30);
+  CI green. See [`FLIP-GATE.md`](FLIP-GATE.md) for the Phase 6 evaluation: 6 gate boxes
+  GREEN, 4 PENDING-HUMAN, `DRY_RUN` stays true until every box is green.
+- Cloudflare resources are provisioned and migrated (real IDs in `wrangler.toml`);
+  deploying is one `npx wrangler deploy` away (see FLIP-GATE.md table).
 - **The fork (map §16) is decided: Path B — rebuild from scratch.** The Path B prompt
   above is the governing build document.
 - **The gate question (map §15.1) is resolved by that decision**: there is no v1 QA
