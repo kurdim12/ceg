@@ -6,6 +6,7 @@ This repository holds the governing documents for the Maranasi B2B outreach engi
 |---|---|
 | [`SYSTEM-MAP.md`](SYSTEM-MAP.md) | **System Map v2** (2026-07-04) — the standing brief compiled from the 8-section interrogation, the deployed v1 system, and prior build/QA sessions. Every decision carries its why so nothing gets re-litigated with less context later. |
 | [`EXECUTION-PROMPT.md`](EXECUTION-PROMPT.md) | **The active execution prompt — Path B (greenfield rebuild), the decided path.** One self-contained Claude Code prompt to build the engine from scratch in a new repository (`maranasi-engine`, placeholder name), with v1 as read-only reference only. Carries the mandatory port-list (v1's 11 guardrails), the 7-item tool-layer never-list, all 12 config defaults, six build phases ending in the hard-gated `DRY_RUN` flip, and the v1 decommission note. |
+| [`KEY-RUN-PROMPT.md`](KEY-RUN-PROMPT.md) | **Claude in Chrome prompt — the key run.** Walks the maintainer through provisioning the three maintainer-side API keys (ZeroBounce = flip-gate blocker H3, OpenRouter, Google Places) as fresh `maranasi-v2`-scoped credentials, human-handles-everything-sensitive. Keys land in the password manager only; they get pasted into the v2 dashboard when the build session emits its `HUMAN STEP` field names. |
 | [`archive/EXECUTION-PROMPT-PATH-A.md`](archive/EXECUTION-PROMPT-PATH-A.md) | The superseded Path A (refactor v1) prompt, kept for the record. Do not execute. |
 
 ## Status
@@ -20,6 +21,8 @@ This repository holds the governing documents for the Maranasi B2B outreach engi
 - Live v1: `https://maranasi-crm.abdalrhmankurdi12.workers.dev` — `DRY_RUN=true`,
   zero real emails ever sent. It stays that way; v2 is born with `DRY_RUN=true` in
   its first commit.
+- The key run (above) can happen any time before the maintainer's July travel —
+  it front-loads H3 so the flip gate later waits on a paste, not a signup.
 
 ## Precedence
 
