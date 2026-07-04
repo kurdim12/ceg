@@ -1,6 +1,14 @@
-# Maranasi Outreach Engine — Standing Brief
+# Maranasi Outreach Engine
 
-This repository holds the governing documents for the Maranasi B2B outreach engine + CRM.
+This repository holds the Maranasi Engine v2 (Cloudflare Workers + Hono + TypeScript
+strict, D1/KV/R2) **and** its governing documents. The build follows
+`EXECUTION-PROMPT.md` under the active keys-later run directive; the repo name is the
+prompt's `maranasi-engine` placeholder (owner renames).
+
+Dev: `npm install`, then `npm run check` (typecheck + tests + dialog grep). Tests run
+against real D1/KV bindings via the Cloudflare workers pool.
+
+## Governing documents
 
 | File | What it is |
 |---|---|

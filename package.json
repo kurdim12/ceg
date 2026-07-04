@@ -1,0 +1,23 @@
+{
+  "name": "maranasi-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:dialogs": "./scripts/check-dialogs.sh",
+    "check": "npm run typecheck && npm run test && npm run check:dialogs"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.19",
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "typescript": "^5.8.0",
+    "vitest": "~3.2.0",
+    "wrangler": "^4.20.0"
+  }
+}

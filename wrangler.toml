@@ -1,0 +1,28 @@
+name = "maranasi-engine"
+main = "src/index.ts"
+compatibility_date = "2025-09-06"
+
+# Single cron trigger; the internal dispatcher routes hourly work
+# (send dispatch every hour, sourcing at 23:00 UTC = 02:00 Amman).
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+# Born safe: DRY_RUN is true in the very first commit and stays true
+# until the Phase 6 Flip Gate passes with every box green.
+DRY_RUN = "true"
+PRODUCT_NAME = "Maranasi Engine"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "maranasi-engine"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "0000000000000000000000000000000000"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "maranasi-engine"
