@@ -78,6 +78,23 @@ apiRoutes.get('/companies/:id/activities', async (c) => {
   return c.json({ activities: rows.results })
 })
 
+/** Read-only deals feed for the board: company, amount, stage, assignee, entered-stage date. */
+apiRoutes.get('/deals', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT d.id, d.company_id AS companyId, c.name AS companyName,
+            d.amount_usd_cents AS amountUsdCents, c.stage,
+            c.assignee_id AS assigneeId, u.name AS assigneeName,
+            c.stage_changed_at AS enteredStageAt
+     FROM deals d
+     JOIN companies c ON c.id = d.company_id
+     LEFT JOIN users u ON u.id = c.assignee_id
+     WHERE c.stage IN ('deal', 'won', 'lost')
+     ORDER BY c.stage_changed_at DESC
+     LIMIT 500`,
+  ).all()
+  return c.json({ deals: rows.results })
+})
+
 apiRoutes.get('/status', async (c) => {
   const [settings, secrets] = await Promise.all([getSettings(c.env.KV), secretStatus(c.env)])
   return c.json({
