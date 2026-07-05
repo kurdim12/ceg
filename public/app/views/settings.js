@@ -50,21 +50,22 @@ export async function renderSettings(root, ctx) {
     <h2>Bounce breaker</h2>
     <div class="card">
       <div>${breaker.state.tripped
-        ? `⚠ TRIPPED: ${esc(breaker.state.reason ?? '')} — sending is stopped.`
-        : `Armed. Current window: ${breaker.verdict.sends} sends, level "${esc(breaker.verdict.level.replaceAll('_', ' '))}".`}</div>
+        ? `<span class="chip lost">tripped</span> ${esc(breaker.state.reason ?? '')} — sending is stopped.`
+        : `<span class="chip ok">armed</span> ${breaker.verdict.sends} sends this window · ${esc(breaker.verdict.level.replaceAll('_', ' '))}`}</div>
+      <div class="breaker-caption">warn ≥ 2% · stop ≥ 3% · floor 25 sends · trailing 7 days</div>
       ${breaker.state.tripped ? '<button class="danger" id="breaker-reset">I investigated — reset the breaker</button>' : ''}
     </div>
 
     <h2>Connections & keys</h2>
     <div class="card">
       <div class="hint">Paste each key from the password manager entry named
-      "Maranasi v2 — (key name)". A key activates its subsystem instantly — no other steps.</div>
+      "Maranasi v2 — (key name)". A key activates its subsystem the moment it is set.</div>
       ${Object.entries(SECRET_LABELS)
         .map(
           ([name, label]) => `
         <div class="secret-row">
           <span class="lbl">${label} ${data.secrets[name] ? '<span class="chip live">live</span>' : '<span class="chip holding">holding</span>'}</span>
-          <span class="ctl"><input data-secret="${name}" placeholder="paste ${name}" type="password" />
+          <span class="ctl input-group"><input data-secret="${name}" placeholder="paste ${name}" type="password" />
           <button class="secondary set-secret" data-secret-btn="${name}">Set</button></span>
         </div>`,
         )
@@ -78,8 +79,8 @@ export async function renderSettings(root, ctx) {
       </div>
       <div class="secret-row">
         <span class="lbl">Your booking link (goes into replies)</span>
-        <span class="ctl"><input id="booking-link" placeholder="https://cal.com/you/15min" />
-        <button class="secondary" id="save-booking">Save</button></span>
+        <span class="ctl input-group"><input id="booking-link" placeholder="https://cal.com/you/15min" />
+        <button class="secondary" id="save-booking">Save link</button></span>
       </div>
     </div>
 
@@ -90,7 +91,7 @@ export async function renderSettings(root, ctx) {
 
     <h2>If it breaks</h2>
     <div class="card break-glass">
-      <p><strong>Emails stopped going out?</strong> Check the banner at the top. A tripped bounce
+      <p><strong>Emails stopped going out?</strong> Check the status strip at the top. A tripped bounce
       breaker or a disconnected Gmail stops sending on purpose — nothing is lost, leads wait.
       Reset the breaker above only after reading why it tripped.</p>
       <p><strong>Something looks wrong with a lead?</strong> Nothing is ever deleted. Every change

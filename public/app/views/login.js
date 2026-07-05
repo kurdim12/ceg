@@ -4,13 +4,7 @@ export function renderLogin(root, onSuccess) {
   root.innerHTML = `
     <div class="login-wrap">
       <div class="login-card">
-        <div class="brand">
-          <div class="mark">M</div>
-          <div>
-            <div class="name">Maranasi</div>
-            <div class="env">Outreach engine</div>
-          </div>
-        </div>
+        <div class="brand"><div class="mark">M</div><div class="wordmark">Maranasi</div></div>
         <p class="lead">Sign in with your owner account.</p>
         <form id="login-form">
           <label for="email">Email</label>
@@ -38,7 +32,7 @@ export function renderLogin(root, onSuccess) {
       onSuccess()
     } catch (err) {
       errorEl.textContent = err.message === 'invalid credentials'
-        ? 'That email and password combination does not match.'
+        ? 'That email and password do not match. Check both and try again.'
         : err.message
     } finally {
       button.disabled = false

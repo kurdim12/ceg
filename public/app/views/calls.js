@@ -1,6 +1,7 @@
 import { api } from '../api.js'
 import { toast } from '../toast.js'
 import { confirmModal } from '../modal.js'
+import { timeChip } from '../timechip.js'
 
 const OUTCOMES = [
   ['answered-interested', 'Answered — interested'],
@@ -14,17 +15,6 @@ function esc(text) {
   const div = document.createElement('div')
   div.textContent = text ?? ''
   return div.innerHTML
-}
-
-function localTimeNow(timezone) {
-  if (!timezone) return 'timezone unknown'
-  try {
-    return new Intl.DateTimeFormat('en-GB', {
-      timeZone: timezone, weekday: 'short', hour: '2-digit', minute: '2-digit',
-    }).format(new Date())
-  } catch {
-    return 'timezone unknown'
-  }
 }
 
 export async function renderCalls(root, ctx) {
@@ -48,23 +38,23 @@ export async function renderCalls(root, ctx) {
     // THE call screen (map §3): the listed fields, exactly three actions,
     // nothing else.
     root.innerHTML = `
-      <div class="queue-strip">Lead ${index + 1} of ${queue.length}
+      <div class="queue-strip"><span class="mono">Lead ${index + 1} of ${queue.length}</span>
         <span>
-          <button class="secondary" id="prev" ${index === 0 ? 'disabled' : ''}>‹ Previous</button>
-          <button class="secondary" id="next" ${index >= queue.length - 1 ? 'disabled' : ''}>Next ›</button>
+          <button class="ghost" id="prev" ${index === 0 ? 'disabled' : ''}>← Previous</button>
+          <button class="ghost" id="next" ${index >= queue.length - 1 ? 'disabled' : ''}>Next →</button>
         </span>
       </div>
       <div class="card call-screen">
         <div class="call-head">
-          <h2>${esc(lead.name)} · ${esc(lead.city ?? '—')}</h2>
-          <div class="local-time">Their time right now: <strong id="lead-clock">${localTimeNow(lead.timezone)}</strong></div>
+          <h2>${esc(lead.name)}</h2>
+          ${timeChip(lead.timezone, { large: true, city: lead.city })}
         </div>
         <div class="call-phone">
           ${esc(lead.phone ?? 'no phone on record')}
           ${lead.phoneConfirmed ? '<span class="chip ok">confirmed · a human answered</span>' : '<span class="chip no-dot">not yet confirmed</span>'}
         </div>
         <div class="call-people">
-          ${lead.contacts.map((p) => `<div>${esc(p.name ?? '(no name)')} — ${esc(p.role ?? 'role unknown')} · ${esc(p.email ?? 'no email')} <span class="chip">${esc(p.emailStatus)}</span></div>`).join('') || '<div class="hint">No contacts on record.</div>'}
+          ${lead.contacts.map((p) => `<div><strong>${esc(p.name ?? '(no name)')}</strong> ${esc(p.role ?? '')} <span class="mono">${esc(p.email ?? 'no email')}</span> <span class="chip quiet">${esc(p.emailStatus.replaceAll('_', ' '))}</span></div>`).join('') || '<div class="hint">No contacts on record.</div>'}
         </div>
         <div class="call-thread">
           <h3>Email thread</h3>
@@ -82,19 +72,19 @@ export async function renderCalls(root, ctx) {
         </div>
         <div class="call-actions">
           <div class="action-block">
-            <h3><span class="num-tag">1</span>Log call outcome</h3>
-            ${OUTCOMES.map(([value, label]) => `<button class="outcome ${value.startsWith('answered') ? 'good-o' : value === 'callback-later' ? 'secondary' : 'bad-o'}" data-outcome="${value}">${label}</button>`).join('')}
+            <h3>1 · Log call outcome</h3>
+            ${OUTCOMES.map(([value, label]) => `<button class="outcome ${value === 'answered-interested' ? 'good-o' : 'secondary'}" data-outcome="${value}">${label}</button>`).join('')}
             <input id="call-note" placeholder="optional note about the call" />
           </div>
           <div class="action-block">
-            <h3><span class="num-tag">2</span>Book meeting</h3>
+            <h3>2 · Book meeting</h3>
             <select id="meet-contact">${lead.contacts.map((p) => `<option value="${p.id}">${esc(p.name ?? p.email ?? 'contact ' + p.id)}</option>`).join('')}</select>
             <input id="meet-when" type="datetime-local" />
             <button id="book">Book meeting</button>
           </div>
-          <div class="action-block">
-            <h3><span class="num-tag">3</span>Send to drop queue</h3>
-            <div class="hint">${esc(lead.dropGate.reason)}</div>
+          <div class="action-block destructive">
+            <h3>3 · Send to drop queue</h3>
+            <div class="hint"><span class="gate-dots">${[0, 1, 2].map((i) => `<i class="${i < lead.dropGate.failedAttempts ? 'hit' : ''}"></i>`).join('')}</span>${esc(lead.dropGate.reason)}</div>
             <button class="danger" id="to-drop">Send to drop queue</button>
           </div>
         </div>
@@ -103,6 +93,11 @@ export async function renderCalls(root, ctx) {
 
     root.querySelector('#prev')?.addEventListener('click', () => { index--; draw() })
     root.querySelector('#next')?.addEventListener('click', () => { index++; draw() })
+    root.onkeydown = (e) => {
+      if (e.target.closest('input, select, textarea')) return
+      if (e.key === 'ArrowLeft' && index > 0) { index--; draw() }
+      if (e.key === 'ArrowRight' && index < queue.length - 1) { index++; draw() }
+    }
 
     root.querySelectorAll('.outcome').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -153,9 +148,6 @@ export async function renderCalls(root, ctx) {
     })
     wireDrops()
 
-    // Tick the lead-local clock without re-rendering the screen.
-    const clock = root.querySelector('#lead-clock')
-    if (clock) setInterval(() => { clock.textContent = localTimeNow(lead.timezone) }, 30_000)
   }
 
   function dropsPanel() {

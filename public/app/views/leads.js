@@ -1,5 +1,6 @@
 import { api } from '../api.js'
 import { toast } from '../toast.js'
+import { timeChip } from '../timechip.js'
 
 const STAGE_LABELS = {
   new: 'New',
@@ -12,6 +13,13 @@ const STAGE_LABELS = {
   unresponsive_email: 'Unresponsive',
   no_valid_email: 'No valid email',
   dropped: 'Dropped',
+}
+
+const EMPTY_BY_STAGE = {
+  unresponsive_email: 'No leads are unresponsive. Good.',
+  no_valid_email: 'Every lead has a working email right now.',
+  lost: 'Nothing lost. Keep it that way.',
+  dropped: 'The drop pool is empty.',
 }
 
 function esc(text) {
@@ -32,11 +40,11 @@ export async function renderLeads(root) {
   root.innerHTML = `
     <div class="stat-row" id="lead-stats"></div>
     <div class="toolbar">
-      <input type="search" id="lead-search" placeholder="Search companies…" />
-      <div class="filter-chips" id="stage-chips"></div>
+      <input type="search" id="lead-search" placeholder="Search companies…" aria-label="Search companies" />
+      <div class="segmented" id="stage-chips"></div>
     </div>
     <div class="view-actions">
-      <button class="secondary" id="run-sourcing">Find new leads…</button>
+      <button class="secondary" id="run-sourcing">Find new leads</button>
       <button class="ghost" id="demo-reset">Regenerate demo data</button>
     </div>
     <div id="sourcing-form"></div>
@@ -52,7 +60,7 @@ export async function renderLeads(root) {
     e.target.disabled = true
     try {
       const result = await api.post('/api/demo/reset')
-      toast(`Demo data regenerated: ${result.companies} companies`, 'success')
+      toast(`Demo data regenerated — ${result.companies} companies`, 'success')
       await load()
     } catch (err) {
       toast(err.message, 'error')
@@ -79,7 +87,7 @@ export async function renderLeads(root) {
           businessType: holder.querySelector('#src-type').value,
           count: Number(holder.querySelector('#src-count').value),
         })
-        toast(`Sourcing done: ${result.tally.created} new, ${result.tally.deduped} duplicates skipped`, 'success')
+        toast(`Sourcing done — ${result.tally.created} new, ${result.tally.deduped} duplicates skipped`, 'success')
         holder.innerHTML = ''
         await load()
       } catch (err) {
@@ -94,12 +102,12 @@ export async function renderLeads(root) {
     const tiles = [
       ['In pipeline', companies.length, 'all leads'],
       ['Active outreach', count(['new', 'email_sequence']), 'new + in sequence'],
-      ['Engaged', count(['replied', 'meeting_booked', 'deal']), 'replied → deal'],
+      ['Engaged', count(['replied', 'meeting_booked', 'deal']), 'replied through deal'],
       ['Won', count(['won']), 'closed'],
       ['Needs a call', count(['no_valid_email', 'unresponsive_email']), 'in call queues'],
     ]
     root.querySelector('#lead-stats').innerHTML = tiles
-      .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="c">${c}</div></div>`)
+      .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v num">${v}</div><div class="c">${c}</div></div>`)
       .join('')
   }
 
@@ -130,29 +138,32 @@ export async function renderLeads(root) {
     if (companies.length === 0) {
       container.innerHTML = `
         <div class="card empty">
-          <div class="glyph">🌱</div>
           <div class="t">No leads yet</div>
           <div class="d">Run sourcing to find businesses, or regenerate the demo data to explore every screen safely.</div>
         </div>`
       return
     }
     if (rows.length === 0) {
-      container.innerHTML = '<div class="card empty"><div class="t">Nothing matches</div><div class="d">Try clearing the search or the stage filter.</div></div>'
+      const line = stageFilter && EMPTY_BY_STAGE[stageFilter]
+        ? EMPTY_BY_STAGE[stageFilter]
+        : 'Nothing matches. Clear the search or pick another stage.'
+      container.innerHTML = `<div class="card empty"><div class="t">${line}</div></div>`
       return
     }
     container.innerHTML = `
-      <div class="table-wrap"><table>
+      <div class="table-wrap"><table class="leads-table">
         <thead><tr>
-          <th>Company</th><th>City</th><th>Stage</th><th>Assignee</th><th>Contacts</th><th>Phone</th>
+          <th>Company</th><th>City</th><th>Stage</th><th>Their time</th><th>Assignee</th><th class="num">Contacts</th><th class="num">Phone</th>
         </tr></thead>
         <tbody>
           ${rows
             .map(
               (c) => `
-            <tr class="clickable" data-id="${c.id}">
-              <td><span class="co"><span class="ini">${esc(initials(c.name))}</span><span class="nm">${esc(c.name)}</span>${c.isDemo ? '<span class="demo-tag">DEMO</span>' : ''}</span></td>
+            <tr class="clickable" data-id="${c.id}" tabindex="0">
+              <td><span class="co"><span class="ini">${esc(initials(c.name))}</span><span class="nm">${esc(c.name)}</span>${c.isDemo ? '<span class="demo-tag">demo</span>' : ''}</span></td>
               <td>${esc(c.city ?? '—')}</td>
               <td><span class="chip ${esc(c.stage)}">${esc(STAGE_LABELS[c.stage] ?? c.stage)}</span></td>
+              <td>${timeChip(c.timezone)}</td>
               <td>${esc(c.assigneeName ?? 'Unassigned')}</td>
               <td class="num">${c.contactCount}</td>
               <td class="num">${esc(c.phone ?? '—')}${c.phoneConfirmed ? ' ✓' : ''}</td>
@@ -163,6 +174,9 @@ export async function renderLeads(root) {
       </table></div>`
     container.querySelectorAll('tr.clickable').forEach((row) => {
       row.addEventListener('click', () => drawDetail(row.dataset.id))
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') drawDetail(row.dataset.id)
+      })
     })
   }
 

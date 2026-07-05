@@ -27,14 +27,14 @@ export async function renderRecap(root) {
       ${tiles
         .map(
           ([k, v, c]) => `
-        <div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="c">${c}</div></div>`,
+        <div class="stat"><div class="k">${k}</div><div class="v num">${v}</div><div class="c">${c}</div></div>`,
         )
         .join('')}
     </div>
     ${
       recap.alarms.length > 0
-        ? `<h2>Alarms</h2><div class="alert-banner">${recap.alarms
-            .map((a) => `<div class="alert ${a.kind === 'breaker_tripped' ? 'critical' : ''}"><span class="ic">${a.kind === 'breaker_tripped' ? '⛔' : '⚠️'}</span><span>${esc(a.message)}</span></div>`)
+        ? `<h2>Alarms</h2><div class="card">${recap.alarms
+            .map((a) => `<div class="drop-row"><span class="chip ${a.kind === 'breaker_tripped' ? 'lost' : 'holding'}">${a.kind === 'breaker_tripped' ? 'breaker' : 'holding'}</span><span class="hint" style="flex:1">${esc(a.message)}</span></div>`)
             .join('')}</div>`
         : '<div class="card"><span class="chip ok">All clear</span> <span class="hint">No alarms in the last 24 hours.</span></div>'
     }
