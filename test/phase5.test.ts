@@ -167,7 +167,7 @@ describe('daily recap', () => {
     await makeCallLead(a)
     await makeCallLead(b)
     // Real clock here: created_at defaults to datetime('now') in D1.
-    const recap = await buildDailyRecap(env.DB, env.KV, DEFAULT_SETTINGS, new Date())
+    const recap = await buildDailyRecap(env.DB, env, DEFAULT_SETTINGS, new Date())
     expect(recap.newLeadsSourced).toBe(2)
     expect(recap.perAssignee).toHaveLength(2)
     expect(recap.perAssignee[0]!.callQueue).toHaveLength(1)
@@ -189,7 +189,7 @@ describe('system alerts', () => {
     )
       .bind(a)
       .run()
-    const alerts = await evaluateAlerts(env.DB, env.KV, DEFAULT_SETTINGS, NOW)
+    const alerts = await evaluateAlerts(env.DB, env, DEFAULT_SETTINGS, NOW)
     const kinds = alerts.map((al) => al.kind)
     expect(kinds).toContain('breaker_tripped')
     expect(kinds).toContain('cron_missed')

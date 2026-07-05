@@ -11,8 +11,8 @@ export const gmailRoutes = new Hono<{ Bindings: Env; Variables: AuthVars }>()
 gmailRoutes.use('*', requireAuth)
 
 gmailRoutes.get('/connect', async (c) => {
-  const clientId = await getSecret(c.env.KV, 'GMAIL_CLIENT_ID')
-  const clientSecret = await getSecret(c.env.KV, 'GMAIL_CLIENT_SECRET')
+  const clientId = await getSecret(c.env, 'GMAIL_CLIENT_ID')
+  const clientSecret = await getSecret(c.env, 'GMAIL_CLIENT_SECRET')
   if (!clientId || !clientSecret) {
     return c.json(
       { error: 'GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET unset — Gmail connect is holding' },
@@ -60,8 +60,8 @@ gmailCallback.get('/callback', async (c) => {
   await c.env.KV.delete(stateKey)
   const userId = Number(userIdRaw)
 
-  const clientId = await getSecret(c.env.KV, 'GMAIL_CLIENT_ID')
-  const clientSecret = await getSecret(c.env.KV, 'GMAIL_CLIENT_SECRET')
+  const clientId = await getSecret(c.env, 'GMAIL_CLIENT_ID')
+  const clientSecret = await getSecret(c.env, 'GMAIL_CLIENT_SECRET')
   if (!clientId || !clientSecret) return c.text('Gmail client credentials are not configured.', 409)
 
   const redirectUri = new URL('/api/auth/gmail/callback', c.req.url).toString()

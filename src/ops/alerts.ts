@@ -1,6 +1,6 @@
 import type { Settings } from '../config/defaults'
 import { getBreaker } from '../sequence/breaker'
-import { secretStatus } from '../settings/store'
+import { secretStatus, type SecretSource } from '../settings/store'
 
 export interface Alert {
   kind: 'breaker_tripped' | 'gmail_disconnected' | 'api_key_missing' | 'cron_missed'
@@ -16,13 +16,13 @@ export const LAST_TICK_KEY = 'ops:last_cron_tick'
  */
 export async function evaluateAlerts(
   db: D1Database,
-  kv: KVNamespace,
+  source: SecretSource,
   _settings: Settings,
   now: Date,
 ): Promise<Alert[]> {
   const alerts: Alert[] = []
 
-  const breaker = await getBreaker(kv)
+  const breaker = await getBreaker(source.KV)
   if (breaker.tripped) {
     alerts.push({
       kind: 'breaker_tripped',
@@ -48,7 +48,7 @@ export async function evaluateAlerts(
     })
   }
 
-  const secrets = await secretStatus(kv)
+  const secrets = await secretStatus(source)
   const missing = Object.entries(secrets)
     .filter(([, present]) => !present)
     .map(([name]) => name)
@@ -59,7 +59,7 @@ export async function evaluateAlerts(
     })
   }
 
-  const lastTick = await kv.get(LAST_TICK_KEY)
+  const lastTick = await source.KV.get(LAST_TICK_KEY)
   if (lastTick && now.getTime() - new Date(lastTick).getTime() > 2 * 3600 * 1000) {
     alerts.push({
       kind: 'cron_missed',

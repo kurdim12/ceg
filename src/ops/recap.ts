@@ -1,5 +1,6 @@
 import type { Settings } from '../config/defaults'
 import { evaluateBounceRate } from '../sequence/breaker'
+import type { SecretSource } from '../settings/store'
 import { evaluateAlerts, type Alert } from './alerts'
 
 export interface AssigneeSection {
@@ -29,7 +30,7 @@ const CALL_STAGES = ['no_valid_email', 'unresponsive_email'] as const
  */
 export async function buildDailyRecap(
   db: D1Database,
-  kv: KVNamespace,
+  source: SecretSource,
   settings: Settings,
   now: Date,
 ): Promise<DailyRecap> {
@@ -82,7 +83,7 @@ export async function buildDailyRecap(
   }
 
   const bounceVerdict = await evaluateBounceRate(db, settings, now)
-  const alarms = await evaluateAlerts(db, kv, settings, now)
+  const alarms = await evaluateAlerts(db, source, settings, now)
 
   return {
     date: now.toISOString().slice(0, 10),

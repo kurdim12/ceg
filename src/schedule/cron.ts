@@ -40,13 +40,13 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
   await autoApprovePastReview(env.DB, now)
   await processApprovedSends(env.DB, env.KV, settings, {
     dryRun: env.DRY_RUN === 'true',
-    gmailFor: (userId) => getGmailFor(env.DB, env.KV, userId),
+    gmailFor: (userId) => getGmailFor(env.DB, env, userId),
     now,
   })
   await pollConnectedInboxes(env, settings, now)
 
   if (now.getUTCHours() === settings.recapUtcHour) {
-    const recap = await buildDailyRecap(env.DB, env.KV, settings, now)
+    const recap = await buildDailyRecap(env.DB, env, settings, now)
     await env.KV.put(`recap:${recap.date}`, JSON.stringify(recap))
     await logActivity(env.DB, {
       entityType: 'system',
@@ -60,7 +60,7 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
 
   await runRecyclers(env.DB, settings, now)
 
-  const places = await getPlaces(env.KV)
+  const places = await getPlaces(env)
   if (!places) {
     await logActivity(env.DB, {
       entityType: 'system',
@@ -85,7 +85,7 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
     {
       places,
       fetchSite: getSiteFetcher(),
-      verifier: await getVerifier(env.KV),
+      verifier: await getVerifier(env),
     },
     {
       geo: settings.sourcingGeo,
@@ -110,10 +110,10 @@ async function pollConnectedInboxes(
   const owners = await env.DB.prepare(
     `SELECT id FROM users WHERE role = 'owner_admin' AND gmail_connected = 1`,
   ).all<{ id: number }>()
-  const llm = await getLlm(env.KV)
+  const llm = await getLlm(env)
 
   for (const owner of owners.results) {
-    const reader = await getGmailReaderFor(env.DB, env.KV, owner.id)
+    const reader = await getGmailReaderFor(env.DB, env, owner.id)
     if (!reader) continue
     const cursorKey = `gmail:inbox_cursor:${owner.id}`
     try {

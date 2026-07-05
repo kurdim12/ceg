@@ -123,3 +123,19 @@ describe('settings routes', () => {
     expect(audit?.detail).not.toContain('zb-test-key')
   })
 })
+
+describe('Cloudflare-secret fallback for API keys', () => {
+  it('reads a key from an env binding when KV has none; KV wins when both exist', async () => {
+    const { getSecret } = await import('../src/settings/store')
+    // Nothing anywhere → null (subsystem holds).
+    expect(await getSecret({ KV: env.KV }, 'ZEROBOUNCE_API_KEY')).toBeNull()
+    // Cloudflare secret/variable only → used.
+    const withEnv = { KV: env.KV, ZEROBOUNCE_API_KEY: 'zb-from-cloudflare' }
+    expect(await getSecret(withEnv, 'ZEROBOUNCE_API_KEY')).toBe('zb-from-cloudflare')
+    // Dashboard-pasted KV value takes precedence (owners rotate without a deploy).
+    await env.KV.put('secret:ZEROBOUNCE_API_KEY', 'zb-from-dashboard')
+    expect(await getSecret(withEnv, 'ZEROBOUNCE_API_KEY')).toBe('zb-from-dashboard')
+    // Blank values never activate anything.
+    expect(await getSecret({ KV: env.KV, OPENROUTER_API_KEY: '   ' }, 'OPENROUTER_API_KEY')).toBeNull()
+  })
+})

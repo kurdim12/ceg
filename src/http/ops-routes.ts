@@ -256,12 +256,12 @@ opsRoutes.post('/drops/:id/reject', async (c) => {
 
 opsRoutes.get('/recap', async (c) => {
   const settings = await getSettings(c.env.KV)
-  const recap = await buildDailyRecap(c.env.DB, c.env.KV, settings, new Date())
+  const recap = await buildDailyRecap(c.env.DB, c.env, settings, new Date())
   return c.json(recap)
 })
 
 opsRoutes.get('/alerts', async (c) => {
   const settings = await getSettings(c.env.KV)
-  const alerts = await evaluateAlerts(c.env.DB, c.env.KV, settings, new Date())
+  const alerts = await evaluateAlerts(c.env.DB, c.env, settings, new Date())
   return c.json({ alerts })
 })

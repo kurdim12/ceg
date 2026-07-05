@@ -24,7 +24,7 @@ apiRoutes.get('/me', (c) => {
 apiRoutes.get('/settings', async (c) => {
   const [settings, secrets] = await Promise.all([
     getSettings(c.env.KV),
-    secretStatus(c.env.KV),
+    secretStatus(c.env),
   ])
   // Secrets are reported as present/absent booleans only — values never leave KV.
   return c.json({ settings, secrets, dryRun: c.env.DRY_RUN === 'true' })
@@ -79,7 +79,7 @@ apiRoutes.get('/companies/:id/activities', async (c) => {
 })
 
 apiRoutes.get('/status', async (c) => {
-  const [settings, secrets] = await Promise.all([getSettings(c.env.KV), secretStatus(c.env.KV)])
+  const [settings, secrets] = await Promise.all([getSettings(c.env.KV), secretStatus(c.env)])
   return c.json({
     dryRun: c.env.DRY_RUN === 'true',
     subsystems: {
@@ -109,14 +109,14 @@ apiRoutes.post('/sourcing/run', async (c) => {
     return c.json({ error: 'count must be an integer between 1 and 100' }, 400)
   }
 
-  const places = await getPlaces(c.env.KV)
+  const places = await getPlaces(c.env)
   if (!places) {
     // Fail-safe, never fake: no key, no sourcing, clear reason.
     return c.json({ error: 'GOOGLE_PLACES_API_KEY unset — sourcing is holding' }, 409)
   }
   const tally = await runSourcing(
     c.env.DB,
-    { places, fetchSite: getSiteFetcher(), verifier: await getVerifier(c.env.KV) },
+    { places, fetchSite: getSiteFetcher(), verifier: await getVerifier(c.env) },
     { geo, businessType, count },
     new Date(),
     `user:${c.get('session').userId}`,
@@ -212,7 +212,7 @@ apiRoutes.post('/agent/chat', async (c) => {
     {
       db: c.env.DB,
       kv: c.env.KV,
-      llm: await getLlm(c.env.KV),
+      llm: await getLlm(c.env),
       userId: c.get('session').userId,
     },
     message,

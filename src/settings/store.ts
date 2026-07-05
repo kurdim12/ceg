@@ -47,9 +47,19 @@ export function isSecretName(name: string): name is SecretName {
   return (SECRET_NAMES as readonly string[]).includes(name)
 }
 
-export async function getSecret(kv: KVNamespace, name: SecretName): Promise<string | null> {
-  const value = await kv.get(`secret:${name}`)
-  return value && value.trim() !== '' ? value : null
+/** Anything with KV plus (optionally) Cloudflare-secret bindings — pass `env`. */
+export type SecretSource = { KV: KVNamespace } & Partial<Record<SecretName, string>>
+
+/**
+ * Key lookup order: dashboard-pasted value in KV first (owners can rotate
+ * without a deploy), then a Cloudflare secret/variable binding of the same
+ * name. Either source activates the subsystem; neither means HOLD.
+ */
+export async function getSecret(source: SecretSource, name: SecretName): Promise<string | null> {
+  const fromKv = await source.KV.get(`secret:${name}`)
+  if (fromKv && fromKv.trim() !== '') return fromKv
+  const fromEnv = source[name]
+  return fromEnv && fromEnv.trim() !== '' ? fromEnv : null
 }
 
 /** Set by a human through settings; value never echoed back or logged. */
@@ -71,9 +81,9 @@ export async function setSecret(
 }
 
 /** Which external adapters are live (key present) vs holding (fail-safe). */
-export async function secretStatus(kv: KVNamespace): Promise<Record<SecretName, boolean>> {
+export async function secretStatus(source: SecretSource): Promise<Record<SecretName, boolean>> {
   const entries = await Promise.all(
-    SECRET_NAMES.map(async (name) => [name, (await getSecret(kv, name)) !== null] as const),
+    SECRET_NAMES.map(async (name) => [name, (await getSecret(source, name)) !== null] as const),
   )
   return Object.fromEntries(entries) as Record<SecretName, boolean>
 }
