@@ -13,23 +13,36 @@ export async function renderDrafts(root, ctx) {
     api.get('/api/review-status'),
   ])
 
+  const pct = Math.min(100, Math.round((review.approved / review.threshold) * 100))
   root.innerHTML = `
-    ${review.active
-      ? `<div class="panel review-counter">Review mode is ON: you have approved
-         <strong>${review.approved} of ${review.threshold}</strong> emails. Every email below waits
-         for you. After ${review.threshold} approvals, sequence emails send automatically.</div>`
-      : `<div class="panel review-counter">Review mode finished (${review.approved} approved) —
-         sequence emails are approved automatically now. Reply drafts still wait for you here.</div>`}
+    <div class="card review-bar">
+      ${
+        review.active
+          ? `<strong>Review mode is on.</strong>
+             <span class="hint">You have approved ${review.approved} of ${review.threshold} emails.
+             Every email below waits for you; after ${review.threshold} approvals, sequence emails send automatically.</span>
+             <div class="track"><div class="fill" style="width:${pct}%"></div></div>`
+          : `<strong>Review mode finished</strong>
+             <span class="hint">(${review.approved} approved) — sequence emails are approved automatically now.
+             Reply drafts still wait for you here.</span>`
+      }
+    </div>
     <div id="draft-list">
-      ${drafts.length === 0
-        ? '<div class="panel">Nothing waiting for review.</div>'
-        : drafts.map((d) => `
-          <div class="panel draft" data-id="${d.id}">
+      ${
+        drafts.length === 0
+          ? '<div class="card empty"><div class="glyph">✅</div><div class="t">Nothing waiting for review</div><div class="d">New drafts appear here the moment the engine writes them.</div></div>'
+          : drafts
+              .map(
+                (d) => `
+          <div class="card draft" data-id="${d.id}">
             <div class="meta">To ${esc(d.toEmail)} · ${esc(d.companyName)} ${d.step ? `· sequence step ${d.step}` : '· reply'} ${d.senderName ? `· from ${esc(d.senderName)}'s inbox` : ''}</div>
             <div class="subject">${esc(d.subject)}</div>
             <pre>${esc(d.body)}</pre>
             <button class="approve">Approve for sending</button>
-          </div>`).join('')}
+          </div>`,
+              )
+              .join('')
+      }
     </div>`
 
   root.querySelectorAll('.draft .approve').forEach((btn) => {

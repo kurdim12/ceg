@@ -10,9 +10,9 @@ const history = []
 
 export async function renderAgent(root) {
   root.innerHTML = `
-    <div class="panel agent-panel">
+    <div class="card agent-panel">
       <div id="chat-log">${history.length === 0
-        ? '<div class="sub">Ask about your pipeline: "who replied this week?", "show me the call queue", "add a note to Atlas Trading"… The assistant can read and update leads. It can never send email, delete anything, or change settings.</div>'
+        ? '<div class="hint">Ask about your pipeline: "who replied this week?", "show me the call queue", "add a note to Atlas Trading"… The assistant can read and update leads. It can never send email, delete anything, or change settings.</div>'
         : ''}</div>
       <form id="chat-form">
         <input id="chat-input" placeholder="Ask the assistant…" autocomplete="off" />

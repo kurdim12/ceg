@@ -19,8 +19,8 @@ export async function renderInbox(root) {
   const { inbound } = await api.get('/api/inbox')
   root.innerHTML =
     inbound.length === 0
-      ? '<div class="panel">No inbound emails yet. Replies land here automatically once inboxes are connected.</div>'
-      : `<table>
+      ? '<div class="card empty"><div class="glyph">📬</div><div class="t">No inbound emails yet</div><div class="d">Replies land here automatically once the owners’ inboxes are connected.</div></div>'
+      : `<div class="table-wrap"><table>
           <thead><tr><th>From</th><th>Company</th><th>Subject</th><th>Classified as</th><th>When</th></tr></thead>
           <tbody>
             ${inbound
@@ -36,5 +36,5 @@ export async function renderInbox(root) {
               )
               .join('')}
           </tbody>
-        </table>`
+        </table></div>`
 }

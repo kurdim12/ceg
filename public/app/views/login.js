@@ -2,17 +2,25 @@ import { api } from '../api.js'
 
 export function renderLogin(root, onSuccess) {
   root.innerHTML = `
-    <div class="panel login-panel">
-      <h1>Maranasi Engine</h1>
-      <p class="sub">Sign in with your owner account.</p>
-      <form id="login-form">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="username" required />
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" required />
-        <button type="submit">Sign in</button>
-        <p class="error-text" id="login-error"></p>
-      </form>
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="brand">
+          <div class="mark">M</div>
+          <div>
+            <div class="name">Maranasi</div>
+            <div class="env">Outreach engine</div>
+          </div>
+        </div>
+        <p class="lead">Sign in with your owner account.</p>
+        <form id="login-form">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="username" required />
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required />
+          <button type="submit">Sign in</button>
+          <p class="error-text" id="login-error"></p>
+        </form>
+      </div>
     </div>`
 
   const form = root.querySelector('#login-form')

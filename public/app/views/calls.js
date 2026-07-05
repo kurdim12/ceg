@@ -35,8 +35,11 @@ export async function renderCalls(root, ctx) {
   function draw() {
     if (queue.length === 0) {
       root.innerHTML = `
-        <div class="panel">Your call queue is empty. Leads land here when their email fails
-        verification or a sequence runs out without a reply.</div>
+        <div class="card empty">
+          <div class="glyph">📞</div>
+          <div class="t">Your call queue is empty</div>
+          <div class="d">Leads land here when their email fails verification or a sequence runs out without a reply.</div>
+        </div>
         ${dropsPanel()}`
       wireDrops()
       return
@@ -51,21 +54,21 @@ export async function renderCalls(root, ctx) {
           <button class="secondary" id="next" ${index >= queue.length - 1 ? 'disabled' : ''}>Next ›</button>
         </span>
       </div>
-      <div class="panel call-screen">
+      <div class="card call-screen">
         <div class="call-head">
           <h2>${esc(lead.name)} · ${esc(lead.city ?? '—')}</h2>
           <div class="local-time">Their time right now: <strong id="lead-clock">${localTimeNow(lead.timezone)}</strong></div>
         </div>
         <div class="call-phone">
           ${esc(lead.phone ?? 'no phone on record')}
-          ${lead.phoneConfirmed ? '<span class="chip ok">confirmed — a human answered before</span>' : '<span class="chip">not yet confirmed</span>'}
+          ${lead.phoneConfirmed ? '<span class="chip ok">confirmed · a human answered</span>' : '<span class="chip no-dot">not yet confirmed</span>'}
         </div>
         <div class="call-people">
-          ${lead.contacts.map((p) => `<div>${esc(p.name ?? '(no name)')} — ${esc(p.role ?? 'role unknown')} · ${esc(p.email ?? 'no email')} <span class="chip">${esc(p.emailStatus)}</span></div>`).join('') || '<div class="sub">No contacts on record.</div>'}
+          ${lead.contacts.map((p) => `<div>${esc(p.name ?? '(no name)')} — ${esc(p.role ?? 'role unknown')} · ${esc(p.email ?? 'no email')} <span class="chip">${esc(p.emailStatus)}</span></div>`).join('') || '<div class="hint">No contacts on record.</div>'}
         </div>
         <div class="call-thread">
           <h3>Email thread</h3>
-          ${lead.thread.length === 0 ? '<div class="sub">No emails yet.</div>' : lead.thread.map((m) => `
+          ${lead.thread.length === 0 ? '<div class="hint">No emails yet.</div>' : lead.thread.map((m) => `
             <div class="thread-msg ${m.direction}">
               <div class="meta">${m.direction === 'outbound' ? 'We wrote' : 'They wrote'} · ${esc(m.createdAt)} UTC · ${esc(m.status)}</div>
               <div class="subject">${esc(m.subject ?? '')}</div>
@@ -75,23 +78,23 @@ export async function renderCalls(root, ctx) {
         <div class="call-last">${lead.lastActivity ? `Last activity: ${esc(lead.lastActivity.kind.replaceAll('_', ' '))} by ${esc(lead.lastActivity.actor)} at ${esc(lead.lastActivity.createdAt)} UTC` : 'No activity recorded yet.'}</div>
         <div class="call-notes">
           <h3>Call notes</h3>
-          ${lead.callNotes.length === 0 ? '<div class="sub">No calls logged yet.</div>' : lead.callNotes.map((n) => `<div class="activity"><div>${esc(n.outcome)}</div><div class="meta">${esc(n.createdAt)} UTC ${n.notes ? '· ' + esc(n.notes) : ''}</div></div>`).join('')}
+          ${lead.callNotes.length === 0 ? '<div class="hint">No calls logged yet.</div>' : lead.callNotes.map((n) => `<div class="activity"><div>${esc(n.outcome)}</div><div class="meta">${esc(n.createdAt)} UTC ${n.notes ? '· ' + esc(n.notes) : ''}</div></div>`).join('')}
         </div>
         <div class="call-actions">
           <div class="action-block">
-            <h3>1 · Log call outcome</h3>
-            ${OUTCOMES.map(([value, label]) => `<button class="secondary outcome" data-outcome="${value}">${label}</button>`).join('')}
+            <h3><span class="num-tag">1</span>Log call outcome</h3>
+            ${OUTCOMES.map(([value, label]) => `<button class="outcome ${value.startsWith('answered') ? 'good-o' : value === 'callback-later' ? 'secondary' : 'bad-o'}" data-outcome="${value}">${label}</button>`).join('')}
             <input id="call-note" placeholder="optional note about the call" />
           </div>
           <div class="action-block">
-            <h3>2 · Book meeting</h3>
+            <h3><span class="num-tag">2</span>Book meeting</h3>
             <select id="meet-contact">${lead.contacts.map((p) => `<option value="${p.id}">${esc(p.name ?? p.email ?? 'contact ' + p.id)}</option>`).join('')}</select>
             <input id="meet-when" type="datetime-local" />
             <button id="book">Book meeting</button>
           </div>
           <div class="action-block">
-            <h3>3 · Send to drop queue</h3>
-            <div class="sub">${esc(lead.dropGate.reason)}</div>
+            <h3><span class="num-tag">3</span>Send to drop queue</h3>
+            <div class="hint">${esc(lead.dropGate.reason)}</div>
             <button class="danger" id="to-drop">Send to drop queue</button>
           </div>
         </div>
@@ -159,7 +162,7 @@ export async function renderCalls(root, ctx) {
     if (drops.length === 0) return ''
     return `
       <h2>Drop queue — waiting for your confirmation</h2>
-      <div class="panel">
+      <div class="card">
         ${drops.map((d) => `
           <div class="drop-row" data-id="${d.id}">
             <span>${esc(d.companyName)} — ${esc(d.reason ?? 'no reason recorded')}</span>
