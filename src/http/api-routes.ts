@@ -6,6 +6,8 @@ import { SettingsValidationError } from '../config/defaults'
 import { getSettings, isSecretName, secretStatus, setSecret, updateSettings } from '../settings/store'
 import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
+import { isStage } from '../domain/stages'
+import { deleteCompany, setStageManual } from '../domain/manual-ops'
 import { runSourcing } from '../pipeline/source-run'
 import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breaker'
 import { approveDraft, approvedOutboundCount, isReviewModeActive, REVIEW_MODE_THRESHOLD } from '../sequence/review-mode'
@@ -65,6 +67,38 @@ apiRoutes.get('/companies', async (c) => {
   return c.json({ companies: rows.results })
 })
 
+/** Owner-initiated manual stage change — any stage, CAS-guarded, audited. */
+apiRoutes.put('/companies/:id/stage', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const { stage } = await c.req.json<{ stage?: string }>()
+  if (!stage || !isStage(stage)) return c.json({ error: 'unknown stage' }, 400)
+  const current = await c.env.DB.prepare('SELECT stage_version AS v FROM companies WHERE id = ?')
+    .bind(id)
+    .first<{ v: number }>()
+  if (!current) return c.json({ error: 'no such company' }, 404)
+  try {
+    const result = await setStageManual(c.env.DB, {
+      companyId: id,
+      to: stage,
+      expectedVersion: current.v,
+      actor: `user:${c.get('session').userId}`,
+    })
+    return c.json({ ok: true, ...result })
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 409)
+  }
+})
+
+/** Hard delete a company and its rows (owner's explicit no-limits choice). */
+apiRoutes.delete('/companies/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const result = await deleteCompany(c.env.DB, id, `user:${c.get('session').userId}`)
+  if (!result.deleted) return c.json({ error: 'no such company' }, 404)
+  return c.json({ ok: true, name: result.name })
+})
+
 apiRoutes.get('/companies/:id/activities', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
@@ -93,6 +127,44 @@ apiRoutes.get('/deals', async (c) => {
      LIMIT 500`,
   ).all()
   return c.json({ deals: rows.results })
+})
+
+/** Chart series for the daily recap: funnel, 14-day sends, reply mix. */
+apiRoutes.get('/recap/charts', async (c) => {
+  const db = c.env.DB
+  const funnelRows = await db.prepare(
+    `SELECT stage, COUNT(*) AS n FROM companies WHERE is_demo IN (0, 1) GROUP BY stage`,
+  ).all<{ stage: string; n: number }>()
+  const funnel = Object.fromEntries(funnelRows.results.map((r) => [r.stage, r.n]))
+
+  const sinceIso = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString()
+  const sends = await db
+    .prepare(
+      `SELECT date(sent_at) AS d, COUNT(*) AS n FROM email_messages
+       WHERE status = 'sent' AND sent_at >= ? GROUP BY date(sent_at) ORDER BY d`,
+    )
+    .bind(sinceIso)
+    .all<{ d: string; n: number }>()
+  const drafts = await db
+    .prepare(
+      `SELECT date(created_at) AS d, COUNT(*) AS n FROM email_messages
+       WHERE direction = 'outbound' AND created_at >= ? GROUP BY date(created_at) ORDER BY d`,
+    )
+    .bind(sinceIso)
+    .all<{ d: string; n: number }>()
+  const replyMix = await db
+    .prepare(
+      `SELECT COALESCE(triage, 'other') AS t, COUNT(*) AS n FROM email_messages
+       WHERE direction = 'inbound' GROUP BY COALESCE(triage, 'other')`,
+    )
+    .all<{ t: string; n: number }>()
+
+  return c.json({
+    funnel,
+    sends: sends.results,
+    drafts: drafts.results,
+    replyMix: replyMix.results,
+  })
 })
 
 apiRoutes.get('/status', async (c) => {

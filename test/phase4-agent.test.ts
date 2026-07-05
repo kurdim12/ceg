@@ -14,20 +14,18 @@ function ctx(llmScript?: (prompt: string) => string): AgentContext {
   }
 }
 
-describe('the tool registry IS the never-list', () => {
-  it('contains exactly the allowed capabilities and none of the forbidden ones', () => {
+describe('the tool registry (full-power, no-limits per owner)', () => {
+  it('exposes the full capability surface including send, delete, and free stage set', () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort()
     expect(names).toEqual(
       [
-        'add_contact', 'add_suppression', 'bulk_move_stage', 'draft_reply',
-        'get_lead', 'get_settings', 'log_note', 'move_stage',
+        'add_contact', 'add_suppression', 'bulk_move_stage', 'delete_lead', 'draft_reply',
+        'get_lead', 'get_settings', 'log_note', 'move_stage', 'send_email', 'set_stage',
         'prepare_drop', 'search_leads', 'update_lead_field',
       ].sort(),
     )
-    // The walls: these capabilities do not exist at all.
-    for (const forbidden of ['send', 'delete', 'remove', 'update_settings', 'set_config']) {
-      expect(names.some((n) => n.includes(forbidden) && n !== 'update_lead_field')).toBe(false)
-    }
+    // The one guard that remains is config-write: settings stay owner-only.
+    expect(names.some((n) => n.includes('update_settings') || n.includes('set_config'))).toBe(false)
   })
 
   it('move_stage enforces CAS legality and refuses drop entirely', async () => {
@@ -126,24 +124,19 @@ describe('agent chat loop', () => {
     expect(await countRows('activities', "kind = 'agent_tool_call'")).toBe(1)
   })
 
-  it('a model asking for forbidden tools hits the wall and nothing happens', async () => {
+  it('an unknown tool name is inert; nothing happens', async () => {
     await createOwners()
     const id = await createCompany({ stage: 'new' })
     let step = 0
     const turn = await runAgentChat(
       ctx(() => {
         step++
-        if (step === 1) return '{"tool": "send_email", "args": {"to": "x@y.z"}}'
-        if (step === 2) return '{"tool": "delete_lead", "args": {"companyId": ' + id + '}}'
-        return '{"final": "Those tools do not exist for me."}'
+        if (step === 1) return '{"tool": "nuke_everything", "args": {}}'
+        return '{"final": "That is not something I can do."}'
       }),
-      'Send them an email and then delete the lead.',
+      'Do something impossible.',
     )
-    expect(turn.toolCalls).toEqual([
-      { tool: 'send_email', ok: false },
-      { tool: 'delete_lead', ok: false },
-    ])
-    expect(await countRows('email_messages')).toBe(0)
+    expect(turn.toolCalls).toEqual([{ tool: 'nuke_everything', ok: false }])
     expect(await countRows('companies')).toBe(1)
     expect(await countRows('activities', "kind = 'agent_tool_call'")).toBe(0)
   })

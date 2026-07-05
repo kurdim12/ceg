@@ -1,19 +1,21 @@
 import { logActivity } from '../domain/activities'
 import { isStage, type Stage } from '../domain/stages'
 import { readStage, transitionStage } from '../domain/transitions'
+import { deleteCompany, setStageManual } from '../domain/manual-ops'
 import { getSettings } from '../settings/store'
 import { draftReply } from '../inbox/draft-reply'
 import type { LlmAdapter } from '../adapters/types'
 
 /**
- * THE WALL. The agent can only ever do what exists in this registry.
- * Deliberately absent, forever (map §9 never-list, tool layer):
- *   - any send tool (sending belongs to the sequence engine's walls)
- *   - any delete tool (states park, history appends)
- *   - any suppression-remove tool (removal is a human in settings)
- *   - any config/settings write tool (the agent reports, never changes)
- * Bulk writes above BULK_CONFIRM_LIMIT return a preview and require an
- * owner-confirmed token; they never execute directly.
+ * The agent's capability surface. The owner chose "no limits" (2026-07),
+ * so the agent CAN edit fields, move stages freely, run bulk ops, queue
+ * emails for sending, and delete leads. The one guard that remains is NOT
+ * a limit on the owner — it protects the owner from strangers: inbound
+ * email is classified as data, never executed as instructions (see
+ * inbox/triage + the agent loop's injection handling). Sending still flows
+ * through the send path's business invariants (suppression, caps, breaker,
+ * DRY_RUN) because those protect the owner's sender reputation, not the
+ * agent's manners.
  */
 export const BULK_CONFIRM_LIMIT = 20
 
@@ -127,6 +129,66 @@ export const AGENT_TOOLS: AgentTool[] = [
         expectedVersion: state.version, actor: 'agent',
       })
       return { ok: true, from: state.stage, to }
+    },
+  },
+  {
+    name: 'set_stage',
+    description: 'Set a company to ANY stage directly (manual override, CAS-safe, audited). Args: companyId, to.',
+    async execute(ctx, args) {
+      const id = num(args, 'companyId')
+      const to = str(args, 'to', 40)
+      const state = await readStage(ctx.db, id)
+      if (!state) throw new Error('no such company')
+      const result = await setStageManual(ctx.db, {
+        companyId: id, to, expectedVersion: state.version, actor: 'agent',
+      })
+      return { ok: true, ...result }
+    },
+  },
+  {
+    name: 'send_email',
+    description:
+      'Queue an email to a contact for sending (goes out on the next dispatch, respecting caps, window, suppression, breaker, and DRY_RUN). Args: companyId, contactId, subject, body.',
+    async execute(ctx, args) {
+      const companyId = num(args, 'companyId')
+      const contactId = num(args, 'contactId')
+      const subject = str(args, 'subject', 300)
+      const body = str(args, 'body', 20_000)
+      const company = await ctx.db
+        .prepare('SELECT assignee_id AS assigneeId FROM companies WHERE id = ?')
+        .bind(companyId)
+        .first<{ assigneeId: number | null }>()
+      const contact = await ctx.db
+        .prepare('SELECT email FROM contacts WHERE id = ? AND company_id = ?')
+        .bind(contactId, companyId)
+        .first<{ email: string | null }>()
+      if (!company || !contact?.email) throw new Error('company or contact email not found')
+      const row = await ctx.db
+        .prepare(
+          `INSERT INTO email_messages
+             (company_id, contact_id, direction, status, subject, body, to_email, from_user_id, approved_at, approved_by)
+           VALUES (?, ?, 'outbound', 'approved', ?, ?, ?, ?, datetime('now'), 'agent') RETURNING id`,
+        )
+        .bind(companyId, contactId, subject, body, contact.email, company.assigneeId)
+        .first<{ id: number }>()
+      await logActivity(ctx.db, {
+        entityType: 'contact', entityId: contactId, actor: 'agent',
+        kind: 'email_queued_by_agent', detail: { messageId: row!.id },
+      })
+      return {
+        ok: true, messageId: row!.id,
+        note: 'Queued. It sends on the next dispatch cycle if DRY_RUN is off and the send guards pass.',
+      }
+    },
+  },
+  {
+    name: 'delete_lead',
+    description: 'Permanently delete a company and all its data. No undo. Args: companyId.',
+    async execute(ctx, args) {
+      const id = num(args, 'companyId')
+      const result = await deleteCompany(ctx.db, id, 'agent')
+      if (!result.deleted) throw new Error('no such company')
+      return { ok: true, deleted: result.name }
     },
   },
   {
