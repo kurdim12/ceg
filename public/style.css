@@ -453,3 +453,23 @@ tr:hover .row-actions { opacity: 1; }
 .link { color: var(--accent); text-decoration: none; }
 .link:hover { text-decoration: underline; }
 @media (max-width: 900px) { .drawer { width: 100%; } .drawer-foot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); } }
+
+/* ============ Kanban board ============ */
+.view-toggle button svg { margin-right: 4px; vertical-align: -2px; }
+.kanban { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.kanban .lane { flex: 0 0 260px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 10px; }
+.kanban .lane-head { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; padding: 4px 6px 12px; }
+.kanban .lane-head .dot { width: 9px; height: 9px; border-radius: 50%; }
+.kanban .lane-head .cnt { margin-left: auto; color: var(--muted); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }
+.kanban .lane-body { min-height: 60px; display: flex; flex-direction: column; gap: 8px; border-radius: var(--r); transition: background var(--t); }
+.kanban .lane-body.drop { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; }
+.kanban-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh-sm); padding: 11px; cursor: grab; transition: box-shadow var(--t), transform var(--t); }
+.kanban-card:hover { box-shadow: var(--sh); }
+.kanban-card:active { cursor: grabbing; }
+.kanban-card.dragging { opacity: .4; }
+.kanban-card .kc-top { display: flex; align-items: center; gap: 9px; }
+.kanban-card .ini { width: 26px; height: 26px; border-radius: 7px; color: #fff; display: grid; place-items: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+.kanban-card .kc-name { font-weight: 600; font-size: 13.5px; line-height: 1.3; }
+.kanban-card .kc-meta { color: var(--muted); font-size: 12px; margin-top: 7px; }
+.kanban-card .kc-time { margin-top: 8px; }
+@media (max-width: 900px) { .kanban .lane { flex-basis: 82vw; } .view-toggle { margin-left: 0 !important; } }

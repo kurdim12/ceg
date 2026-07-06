@@ -104,10 +104,19 @@ export async function resetDemoData(
   assigneeIds: readonly [number, number],
   actor: string,
 ): Promise<{ companies: number; contacts: number }> {
-  // FK-safe order; activities are append-only and stay.
+  // FK-safe order: clear everything that references a demo company/contact
+  // BEFORE the companies/contacts themselves. Rows accumulated while working
+  // demo leads (calls, drafts, enrollments, drops) reference them, so
+  // deleting parents first trips a foreign-key constraint. Activities are
+  // append-only and stay.
+  const demoCompanies = 'SELECT id FROM companies WHERE is_demo = 1'
   await db.batch([
-    db.prepare('DELETE FROM meetings WHERE is_demo = 1'),
-    db.prepare('DELETE FROM deals WHERE is_demo = 1'),
+    db.prepare(`DELETE FROM call_attempts WHERE company_id IN (${demoCompanies})`),
+    db.prepare(`DELETE FROM drop_requests WHERE company_id IN (${demoCompanies})`),
+    db.prepare(`DELETE FROM email_messages WHERE company_id IN (${demoCompanies})`),
+    db.prepare(`DELETE FROM sequence_enrollments WHERE company_id IN (${demoCompanies})`),
+    db.prepare(`DELETE FROM meetings WHERE company_id IN (${demoCompanies})`),
+    db.prepare(`DELETE FROM deals WHERE company_id IN (${demoCompanies})`),
     db.prepare('DELETE FROM contacts WHERE is_demo = 1'),
     db.prepare('DELETE FROM companies WHERE is_demo = 1'),
   ])

@@ -26,6 +26,11 @@ const EMPTY_BY_STAGE = {
 }
 
 const AVATAR_HUES = ['#2563EB', '#7C5CFC', '#0EA5B5', '#0EA371', '#D9820A', '#E5484D']
+const STAGE_COLORS = {
+  new: '#2563EB', email_sequence: '#D9820A', replied: '#0EA371', meeting_booked: '#0EA5B5',
+  deal: '#7C5CFC', won: '#0A7A55', lost: '#C13438',
+  unresponsive_email: '#8A93A2', no_valid_email: '#D9820A', dropped: '#8A93A2',
+}
 
 function esc(text) {
   const div = document.createElement('div')
@@ -44,11 +49,17 @@ export async function renderLeads(root, ctx) {
   let search = ''
   let stageFilter = null
 
+  let mode = 'list'
+
   root.innerHTML = `
     <div class="stat-row" id="lead-stats"></div>
     <div class="toolbar">
       <input type="search" id="lead-search" placeholder="Search companies…" aria-label="Search companies" />
       <div class="segmented" id="stage-chips"></div>
+      <div class="segmented view-toggle" id="view-toggle" style="margin-left:auto">
+        <button class="on" data-mode="list" aria-label="List view"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg> List</button>
+        <button data-mode="board" aria-label="Board view"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg> Board</button>
+      </div>
     </div>
     <div class="view-actions">
       <button id="run-sourcing">Find new leads</button>
@@ -60,8 +71,23 @@ export async function renderLeads(root, ctx) {
 
   root.querySelector('#lead-search').addEventListener('input', (e) => {
     search = e.target.value.toLowerCase()
-    drawTable()
+    render()
   })
+
+  root.querySelectorAll('#view-toggle button').forEach((b) => {
+    b.addEventListener('click', () => {
+      mode = b.dataset.mode
+      root.querySelectorAll('#view-toggle button').forEach((x) => x.classList.toggle('on', x === b))
+      root.querySelector('#stage-chips').style.display = mode === 'board' ? 'none' : ''
+      root.querySelector('#lead-detail').innerHTML = ''
+      render()
+    })
+  })
+
+  function render() {
+    if (mode === 'board') drawBoard()
+    else drawTable()
+  }
 
   root.querySelector('#demo-reset').addEventListener('click', async (e) => {
     e.target.disabled = true
@@ -223,12 +249,72 @@ export async function renderLeads(root, ctx) {
     })
   }
 
+  const BOARD_ORDER = STAGES.map(([v]) => v)
+
+  function drawBoard() {
+    const container = root.querySelector('#lead-table')
+    const filtered = companies.filter(
+      (c) => search === '' || c.name.toLowerCase().includes(search) || (c.city ?? '').toLowerCase().includes(search),
+    )
+    if (companies.length === 0) {
+      container.innerHTML = `<div class="card empty"><div class="t">No leads yet</div><div class="d">Run sourcing or regenerate demo data to fill the board.</div></div>`
+      return
+    }
+    const byStage = Object.fromEntries(BOARD_ORDER.map((s) => [s, []]))
+    for (const c of filtered) (byStage[c.stage] ??= []).push(c)
+    // Only show columns that are core pipeline or currently hold a lead.
+    const CORE = ['new', 'email_sequence', 'replied', 'meeting_booked', 'deal', 'won', 'lost']
+    const cols = BOARD_ORDER.filter((s) => CORE.includes(s) || byStage[s].length > 0)
+
+    container.innerHTML = `<div class="kanban">${cols.map((s) => `
+      <div class="lane" data-stage="${s}">
+        <div class="lane-head"><span class="dot" style="background:${STAGE_COLORS[s]}"></span>${STAGE_LABELS[s]}<span class="cnt">${byStage[s].length}</span></div>
+        <div class="lane-body" data-stage="${s}">
+          ${byStage[s].map((c) => `
+            <div class="kanban-card" draggable="true" data-id="${c.id}">
+              <div class="kc-top"><span class="ini" style="background:${hue(c.id)}">${esc(initials(c.name))}</span><span class="kc-name">${esc(c.name)}</span></div>
+              <div class="kc-meta">${esc(c.city ?? '—')}${c.assigneeName ? ' · ' + esc(c.assigneeName) : ''}</div>
+              ${c.timezone ? `<div class="kc-time">${timeChip(c.timezone)}</div>` : ''}
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}</div>`
+
+    let dragId = null
+    container.querySelectorAll('.kanban-card').forEach((card) => {
+      card.addEventListener('click', () => openRecord(card.dataset.id, load))
+      card.addEventListener('dragstart', (e) => { dragId = card.dataset.id; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move' })
+      card.addEventListener('dragend', () => card.classList.remove('dragging'))
+    })
+    container.querySelectorAll('.lane-body').forEach((lane) => {
+      lane.addEventListener('dragover', (e) => { e.preventDefault(); lane.classList.add('drop') })
+      lane.addEventListener('dragleave', () => lane.classList.remove('drop'))
+      lane.addEventListener('drop', async (e) => {
+        e.preventDefault()
+        lane.classList.remove('drop')
+        const to = lane.dataset.stage
+        const c = companies.find((x) => String(x.id) === String(dragId))
+        if (!c || c.stage === to) return
+        const from = c.stage
+        c.stage = to
+        drawBoard(); drawStats()
+        try {
+          await api.put(`/api/companies/${dragId}/stage`, { stage: to })
+          toast(`${c.name} → ${STAGE_LABELS[to]}`, 'success')
+        } catch (err) {
+          c.stage = from
+          drawBoard(); drawStats()
+          toast(err.message, 'error')
+        }
+      })
+    })
+  }
+
   async function load() {
     const data = await api.get('/api/companies')
     companies = data.companies
     drawStats()
     drawChips()
-    drawTable()
+    render()
   }
 
   await load()
