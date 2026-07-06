@@ -209,7 +209,9 @@ body {
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-sm); }
 .pill.hold { background: var(--amber-soft); color: var(--amber-ink); }
 .pill.ok { background: var(--green-soft); color: var(--green-ink); }
+.pill.danger { background: var(--red-soft); color: var(--red-ink); }
 .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.topbar-flags { display: inline-flex; gap: 8px; align-items: center; }
 
 .page-head { padding: 16px 0 14px; }
 .page-head h1 { margin: 0; font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }

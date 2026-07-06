@@ -113,7 +113,10 @@ async function renderShell(me) {
       <main class="content">
         <div class="topbar">
           ${statusStrip(alerts.alerts)}
-          ${status?.dryRun ? '<span class="pill hold" title="No emails leave the system while dry run is on">Dry run</span>' : '<span class="pill ok">Live</span>'}
+          <span class="topbar-flags">
+            ${status?.sendingPaused ? '<span class="pill danger" title="A human paused all outbound email">Sending paused</span>' : ''}
+            ${status?.dryRun ? '<span class="pill hold" title="No emails leave the system while dry run is on">Dry run</span>' : '<span class="pill ok">Live</span>'}
+          </span>
         </div>
         <div class="content-inner">
           <div class="page-head">
@@ -191,7 +194,18 @@ async function renderShell(me) {
 
   const viewRoot = app.querySelector('#view')
   viewRoot.innerHTML = '<div class="skeleton"></div>'
-  await VIEWS[current].render(viewRoot, { me, reload: () => renderShell(me) })
+  try {
+    await VIEWS[current].render(viewRoot, { me, reload: () => renderShell(me) })
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return boot() // session ended → re-login
+    viewRoot.innerHTML = `
+      <div class="card empty">
+        <div class="t">This screen couldn't load</div>
+        <div class="d">${esc(err.message ?? 'Something went wrong.')}</div>
+        <button id="view-retry">Try again</button>
+      </div>`
+    viewRoot.querySelector('#view-retry').addEventListener('click', () => renderShell(me))
+  }
 
   clearInterval(ticker)
   ticker = setInterval(() => tickTimeChips(), 30_000)

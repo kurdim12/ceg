@@ -1,6 +1,7 @@
 import type { GmailAdapter } from '../adapters/types'
 import type { Settings } from '../config/defaults'
 import { logActivity } from '../domain/activities'
+import { getPauseState } from '../ops/pause'
 import { isInSendWindow } from '../schedule/window'
 import { effectiveDailyCap, firstSentAt, sentTodayCount } from './caps'
 import { getBreaker, updateBreaker } from './breaker'
@@ -35,8 +36,9 @@ export interface SendTally {
 
 /**
  * The ONLY code path that ever sends an email. Order of walls, each
- * independently sufficient to stop a send: breaker → suppression →
- * send window → per-inbox cap → DRY_RUN → connected inbox.
+ * independently sufficient to stop a send: manual pause → breaker →
+ * suppression → verify-before-send → send window → per-inbox cap →
+ * DRY_RUN → connected inbox.
  */
 export async function processApprovedSends(
   db: D1Database,
@@ -45,6 +47,19 @@ export async function processApprovedSends(
   deps: SendDeps,
 ): Promise<SendTally> {
   const tally: SendTally = { sent: 0, suppressed: 0, capped: 0, held: 0, dryRunHeld: 0 }
+
+  // Wall 0: the manual emergency stop. A human paused sending — nothing goes
+  // out until a human resumes it, no matter what else is green.
+  const pause = await getPauseState(kv)
+  if (pause.paused) {
+    await logActivity(db, {
+      entityType: 'system',
+      actor: 'system:sender',
+      kind: 'send_held_paused',
+      detail: { by: pause.by ?? null, reason: pause.reason ?? null },
+    })
+    return tally
+  }
 
   const breaker = await getBreaker(kv)
   if (breaker.tripped) {

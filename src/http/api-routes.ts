@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
+import { getGmailFor, getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
 import { confirmBulk } from '../agent/registry'
 import { runAgentChat } from '../agent/loop'
 import { SettingsValidationError } from '../config/defaults'
@@ -8,6 +8,7 @@ import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
 import { isStage } from '../domain/stages'
 import { createCompany, deleteCompany, setStageManual, updateCompanyFields } from '../domain/manual-ops'
+import { getPauseState, setSendingPaused } from '../ops/pause'
 import { runSourcing } from '../pipeline/source-run'
 import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breaker'
 import { approveDraft, approvedOutboundCount, isReviewModeActive, REVIEW_MODE_THRESHOLD } from '../sequence/review-mode'
@@ -263,9 +264,14 @@ apiRoutes.get('/recap/charts', async (c) => {
 })
 
 apiRoutes.get('/status', async (c) => {
-  const [settings, secrets] = await Promise.all([getSettings(c.env.KV), secretStatus(c.env)])
+  const [settings, secrets, pause] = await Promise.all([
+    getSettings(c.env.KV),
+    secretStatus(c.env),
+    getPauseState(c.env.KV),
+  ])
   return c.json({
     dryRun: c.env.DRY_RUN === 'true',
+    sendingPaused: pause.paused,
     subsystems: {
       verifier: secrets.ZEROBOUNCE_API_KEY ? 'live' : 'holding',
       places: secrets.GOOGLE_PLACES_API_KEY ? 'live' : 'holding',
@@ -357,6 +363,129 @@ apiRoutes.get('/breaker', async (c) => {
 apiRoutes.post('/breaker/reset', async (c) => {
   await resetBreaker(c.env.DB, c.env.KV, `user:${c.get('session').userId}`)
   return c.json({ ok: true })
+})
+
+/** Current manual send-pause state. */
+apiRoutes.get('/sending/state', async (c) => {
+  return c.json({ pause: await getPauseState(c.env.KV), dryRun: c.env.DRY_RUN === 'true' })
+})
+
+/** Emergency stop: halt ALL outbound email until a human resumes it. Audited. */
+apiRoutes.post('/sending/pause', async (c) => {
+  const { reason } = await c.req.json<{ reason?: string }>().catch(() => ({ reason: undefined }))
+  const state = await setSendingPaused(
+    c.env.DB, c.env.KV, true, `user:${c.get('session').userId}`, new Date(),
+    typeof reason === 'string' ? reason : undefined,
+  )
+  return c.json({ ok: true, pause: state })
+})
+
+/** Resume sending after a manual pause. Audited. */
+apiRoutes.post('/sending/resume', async (c) => {
+  const state = await setSendingPaused(
+    c.env.DB, c.env.KV, false, `user:${c.get('session').userId}`, new Date(),
+  )
+  return c.json({ ok: true, pause: state })
+})
+
+/**
+ * Send exactly ONE test email to the signed-in owner's own address. Never
+ * touches leads or the queue. Respects DRY_RUN (reports without sending),
+ * the manual pause, and requires a connected inbox. This is how an owner
+ * verifies real delivery works without any risk of a mass send.
+ */
+apiRoutes.post('/sending/test', async (c) => {
+  const userId = c.get('session').userId
+  const me = await c.env.DB.prepare('SELECT email FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ email: string }>()
+  if (!me) return c.json({ error: 'no such user' }, 404)
+
+  const pause = await getPauseState(c.env.KV)
+  if (pause.paused) return c.json({ error: 'sending is paused — resume it before testing' }, 409)
+
+  if (c.env.DRY_RUN === 'true') {
+    await logActivity(c.env.DB, {
+      entityType: 'user', entityId: userId, actor: `user:${userId}`,
+      kind: 'test_email_dry_run', detail: { to: me.email },
+    })
+    return c.json({
+      ok: true, sent: false, dryRun: true, to: me.email,
+      note: 'DRY_RUN is on — no email was sent. A real test would reach exactly this address.',
+    })
+  }
+
+  const gmail = await getGmailFor(c.env.DB, c.env, userId)
+  if (!gmail) return c.json({ error: 'connect your Gmail first, then test' }, 409)
+  const result = await gmail.send({
+    fromUserId: userId,
+    to: me.email,
+    subject: 'Maranasi Engine — test email',
+    body: 'This is a one-off test from your Maranasi Engine. If you are reading it, sending works. No leads were emailed.',
+  })
+  await logActivity(c.env.DB, {
+    entityType: 'user', entityId: userId, actor: `user:${userId}`,
+    kind: 'test_email_sent', detail: { to: me.email },
+  })
+  return c.json({ ok: true, sent: true, to: me.email, providerMessageId: result.providerMessageId })
+})
+
+/**
+ * Go-live readiness (the Flip Gate). Each gate is a concrete precondition for
+ * turning DRY_RUN off; `ready` is true only when every REQUIRED gate is green.
+ * Read-only — flipping DRY_RUN is still a human editing wrangler.toml.
+ */
+apiRoutes.get('/readiness', async (c) => {
+  const [secrets, settings, pause, breaker] = await Promise.all([
+    secretStatus(c.env),
+    getSettings(c.env.KV),
+    getPauseState(c.env.KV),
+    getBreaker(c.env.KV),
+  ])
+  const owners = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS total, COALESCE(SUM(gmail_connected), 0) AS connected FROM users WHERE role = 'owner_admin'",
+  ).first<{ total: number; connected: number }>()
+  const total = owners?.total ?? 0
+  const connected = owners?.connected ?? 0
+
+  const gates = [
+    { key: 'openrouter', label: 'OpenRouter key set (drafting + triage)', ok: secrets.OPENROUTER_API_KEY, required: true },
+    { key: 'zerobounce', label: 'ZeroBounce key set (verify-before-send)', ok: secrets.ZEROBOUNCE_API_KEY, required: true },
+    { key: 'gmailClient', label: 'Gmail OAuth client configured', ok: secrets.GMAIL_CLIENT_ID && secrets.GMAIL_CLIENT_SECRET, required: true },
+    { key: 'ownersConnected', label: `Owners connected Gmail (${connected}/${total})`, ok: total > 0 && connected >= total, required: true },
+    { key: 'notPaused', label: 'Sending not manually paused', ok: !pause.paused, required: true },
+    { key: 'breakerArmed', label: 'Bounce breaker armed (not tripped)', ok: !breaker.tripped, required: true },
+    { key: 'places', label: 'Google Places key set (lead sourcing)', ok: secrets.GOOGLE_PLACES_API_KEY, required: false },
+    { key: 'sourcing', label: 'Daily sourcing configured', ok: settings.sourcingGeo !== '' && settings.sourcingBusinessType !== '', required: false },
+  ].map((g) => ({ ...g, ok: Boolean(g.ok) }))
+
+  const blockers = gates.filter((g) => g.required && !g.ok).map((g) => g.key)
+  return c.json({ dryRun: c.env.DRY_RUN === 'true', gates, ready: blockers.length === 0, blockers })
+})
+
+/**
+ * Recent high-signal audit events — sends, approvals, deletes, key/setting
+ * changes, pause/resume, breaker. Read-only; the append-only trail is the
+ * source of truth.
+ */
+apiRoutes.get('/audit', async (c) => {
+  const KINDS = [
+    'email_sent', 'draft_approved', 'drafts_auto_approved', 'send_held_paused',
+    'send_held_breaker', 'test_email_sent', 'test_email_dry_run',
+    'company_created', 'company_deleted', 'lead_edited', 'stage_set_manual',
+    'secret_set', 'settings_update', 'sending_paused', 'sending_resumed',
+    'gmail_connected', 'gmail_disconnected', 'breaker_tripped', 'breaker_reset',
+  ]
+  const placeholders = KINDS.map(() => '?').join(',')
+  const rows = await c.env.DB.prepare(
+    `SELECT id, entity_type AS entityType, entity_id AS entityId, actor, kind,
+            detail, created_at AS createdAt
+     FROM activities WHERE kind IN (${placeholders})
+     ORDER BY id DESC LIMIT 100`,
+  )
+    .bind(...KINDS)
+    .all()
+  return c.json({ events: rows.results })
 })
 
 apiRoutes.put('/me/booking-link', async (c) => {

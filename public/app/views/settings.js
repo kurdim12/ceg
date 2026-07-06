@@ -27,14 +27,81 @@ const FIELD_LABELS = [
   ['oooPauseDays', 'Pause after out-of-office (days)'],
 ]
 
+function timeAgo(iso) {
+  if (!iso) return ''
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso + 'Z').getTime()) / 1000))
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+
 export async function renderSettings(root, ctx) {
-  const data = await api.get('/api/settings')
-  const breaker = await api.get('/api/breaker')
+  const [data, breaker, readiness, sending, audit] = await Promise.all([
+    api.get('/api/settings'),
+    api.get('/api/breaker'),
+    api.get('/api/readiness').catch(() => null),
+    api.get('/api/sending/state').catch(() => ({ pause: { paused: false } })),
+    api.get('/api/audit').catch(() => ({ events: [] })),
+  ])
   // The signed-in owner's own connection state (Gmail + booking link).
   const me = ctx.me ?? (await api.get('/api/me'))
   const gmailConnected = Boolean(me.gmailConnected)
+  const paused = Boolean(sending.pause?.paused)
+
+  const AUDIT_LABELS = {
+    email_sent: 'Email sent', draft_approved: 'Draft approved', drafts_auto_approved: 'Drafts auto-approved',
+    send_held_paused: 'Send held — paused', send_held_breaker: 'Send held — breaker',
+    test_email_sent: 'Test email sent', test_email_dry_run: 'Test email (dry run)',
+    company_created: 'Lead created', company_deleted: 'Lead deleted', lead_edited: 'Lead edited',
+    stage_set_manual: 'Stage changed', secret_set: 'Key set', settings_update: 'Settings changed',
+    sending_paused: 'Sending PAUSED', sending_resumed: 'Sending resumed',
+    gmail_connected: 'Gmail connected', gmail_disconnected: 'Gmail disconnected',
+    breaker_tripped: 'Breaker tripped', breaker_reset: 'Breaker reset',
+  }
 
   root.innerHTML = `
+    <div class="card ${data.dryRun ? 'callout' : ''}" style="${data.dryRun ? '' : 'border-color:var(--red);background:var(--red-soft)'}">
+      <div class="lbl" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${data.dryRun
+          ? '<span class="chip holding">DRY RUN</span><strong>No emails leave the system.</strong> Real sending is off until a human flips it.'
+          : '<span class="chip lost">LIVE</span><strong>The engine is sending real emails.</strong>'}
+      </div>
+    </div>
+
+    <h2>Go-live readiness</h2>
+    <div class="card">
+      ${readiness
+        ? `<div class="lbl" style="margin-bottom:10px">${readiness.ready
+            ? '<span class="chip ok">All required checks pass</span> Ready to flip DRY_RUN when you choose.'
+            : `<span class="chip warn">${readiness.blockers.length} blocker${readiness.blockers.length === 1 ? '' : 's'}</span> Clear these before going live.`}</div>
+          <div class="readiness-list">
+            ${readiness.gates.map((g) => `
+              <div class="secret-row" style="padding:9px 0">
+                <span class="lbl">${g.ok ? '<span class="chip ok no-dot">ready</span>' : g.required ? '<span class="chip lost no-dot">blocker</span>' : '<span class="chip holding no-dot">optional</span>'} ${esc(g.label)}</span>
+              </div>`).join('')}
+          </div>`
+        : '<div class="hint">Readiness check unavailable.</div>'}
+    </div>
+
+    <h2>Emergency controls</h2>
+    <div class="card">
+      <div class="secret-row">
+        <span class="lbl">${paused
+          ? '<span class="chip lost">SENDING PAUSED</span> All outbound email is stopped by hand.'
+          : '<span class="chip ok">Sending armed</span> The manual stop is off.'}</span>
+        <span class="ctl">
+          ${paused
+            ? '<button class="secondary" id="sending-resume">Resume sending</button>'
+            : '<button class="danger" id="sending-pause">Pause all sending</button>'}
+        </span>
+      </div>
+      <div class="secret-row">
+        <span class="lbl">Send a test email to yourself <span class="hint">(never mass-sends; DRY_RUN safe)</span></span>
+        <span class="ctl"><button class="secondary" id="send-test">Send test email</button></span>
+      </div>
+    </div>
+
     <h2>Sending</h2>
     <div class="card">
       <div class="hint">Dry run is ${data.dryRun ? 'ON — no emails leave the system' : 'OFF — the engine sends for real'}.
@@ -93,6 +160,18 @@ export async function renderSettings(root, ctx) {
       <button class="secondary" id="demo-reset">Regenerate demo data</button>
     </div>
 
+    <h2>Recent activity</h2>
+    <div class="card">
+      ${audit.events.length === 0
+        ? '<div class="hint">No recorded actions yet.</div>'
+        : `<div class="audit-list">${audit.events.slice(0, 30).map((e) => `
+            <div class="drop-row" style="padding:8px 0">
+              <span><strong>${esc(AUDIT_LABELS[e.kind] ?? e.kind.replaceAll('_', ' '))}</strong>
+                <span class="hint">· ${esc(e.actor)}</span></span>
+              <span class="hint mono">${esc(timeAgo(e.createdAt))}</span>
+            </div>`).join('')}</div>`}
+    </div>
+
     <h2>If it breaks</h2>
     <div class="card break-glass">
       <p><strong>Emails stopped going out?</strong> Check the status strip at the top. A tripped bounce
@@ -119,6 +198,52 @@ export async function renderSettings(root, ctx) {
       ctx.reload()
     } catch (err) {
       toast(err.message, 'error')
+    }
+  })
+
+  root.querySelector('#sending-pause')?.addEventListener('click', async () => {
+    const go = await confirmModal({
+      title: 'Pause all sending?',
+      body: 'This is the emergency stop. No outbound email goes out — not sequences, not replies — until someone resumes it here. Nothing is lost; leads wait.',
+      confirmLabel: 'Pause sending',
+      danger: true,
+    })
+    if (!go) return
+    try {
+      await api.post('/api/sending/pause', { reason: 'paused from settings' })
+      toast('Sending paused', 'success')
+      ctx.reload()
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  })
+
+  root.querySelector('#sending-resume')?.addEventListener('click', async () => {
+    try {
+      await api.post('/api/sending/resume')
+      toast('Sending resumed', 'success')
+      ctx.reload()
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  })
+
+  root.querySelector('#send-test')?.addEventListener('click', async (e) => {
+    e.target.disabled = true
+    e.target.textContent = 'Sending…'
+    try {
+      const r = await api.post('/api/sending/test')
+      toast(
+        r.dryRun
+          ? `DRY_RUN is on — nothing was sent. A real test would reach ${r.to}.`
+          : `Test email sent to ${r.to}. Check your inbox.`,
+        'success',
+      )
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      e.target.disabled = false
+      e.target.textContent = 'Send test email'
     }
   })
 
