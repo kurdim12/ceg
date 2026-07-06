@@ -176,7 +176,7 @@ async function renderShell(me) {
       <div class="modal">
         <h2>More</h2>
         <div class="sheet-list">
-          ${['inbox', 'calendar', 'agent', 'deals', 'settings']
+          ${['candidates', 'inbox', 'calendar', 'agent', 'deals', 'settings']
             .map((k) => `<button data-view="${k}">${ICONS[VIEWS[k].icon]}<span>${VIEWS[k].label}</span></button>`)
             .join('')}
         </div>
