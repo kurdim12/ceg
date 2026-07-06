@@ -1,4 +1,4 @@
-import { getGmailFor, getGmailReaderFor, getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
+import { getGmailFor, getGmailReaderFor, getLlm, getPlaces, getSiteFetcher } from '../adapters/factory'
 import { logActivity } from '../domain/activities'
 import { processInboundMessage } from '../inbox/process'
 import { LAST_TICK_KEY } from '../ops/alerts'
@@ -85,7 +85,6 @@ export async function runCronTick(env: CronEnv, now: Date): Promise<void> {
     {
       places,
       fetchSite: getSiteFetcher(),
-      verifier: await getVerifier(env),
     },
     {
       geo: settings.sourcingGeo,

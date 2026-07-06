@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { contactPageUrls, isPathAllowed, parseRobots } from '../src/adapters/crawler'
 import { mapZeroBounceStatus } from '../src/adapters/zerobounce'
 import { mockPlaces, mockSiteFetcher, mockVerifier } from '../src/adapters/mocks'
+import { listCandidates } from '../src/domain/candidates'
 import { DEFAULT_SETTINGS } from '../src/config/defaults'
 import { crawlForEmails } from '../src/crawler/crawl'
 import { runSourcing } from '../src/pipeline/source-run'
@@ -129,7 +130,7 @@ describe('sourcing runs', () => {
     },
   ]
 
-  it('tallies created / deduped / parked with domain dedupe across www + paths', async () => {
+  it('produces review candidates only (no companies) with domain dedupe across www + paths', async () => {
     await createOwners()
     const tally = await runSourcing(
       env.DB,
@@ -138,17 +139,23 @@ describe('sourcing runs', () => {
         fetchSite: mockSiteFetcher({
           'https://alpha.example': '<a href="mailto:team@alpha.example">mail</a>',
         }),
-        verifier: mockVerifier({ 'team@alpha.example': 'valid' }),
       },
       { geo: 'Warsaw', businessType: 'roasters', count: 10 },
       NOW,
       'test',
     )
     expect(tally.found).toBe(3)
-    expect(tally.created).toBe(2) // Alpha + Beta; Alpha Again deduped by domain
+    expect(tally.candidates).toBe(2) // Alpha + Beta; Alpha Again deduped by domain
     expect(tally.deduped).toBe(1)
-    expect(tally.enrolled).toBe(1) // Alpha
-    expect(tally.noValidEmail).toBe(1) // Beta: no site, no email — call queue path
+    // Sourcing never writes to the CRM — everything is a candidate for review.
+    expect(await countRows('companies')).toBe(0)
+    expect(await countRows('email_messages')).toBe(0)
+    expect(await countRows('lead_candidates', "status = 'new'")).toBe(2)
+
+    // Alpha crawled a real email into its evidence; Beta (no site) did not.
+    const cands = await listCandidates(env.DB, 'new')
+    const alpha = cands.find((c) => c.domain === 'alpha.example')
+    expect(alpha?.extractedEmail).toBe('team@alpha.example')
     expect(await countRows('activities', "kind = 'sourcing_run'")).toBe(1)
   })
 

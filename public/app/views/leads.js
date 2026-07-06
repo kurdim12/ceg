@@ -125,9 +125,12 @@ export async function renderLeads(root, ctx) {
           businessType: holder.querySelector('#src-type').value,
           count: Number(holder.querySelector('#src-count').value),
         })
-        toast(`Sourcing done — ${result.tally.created} new, ${result.tally.deduped} duplicates skipped`, 'success')
+        toast(
+          `Sourcing done — ${result.tally.candidates} candidate${result.tally.candidates === 1 ? '' : 's'} to review, ${result.tally.deduped} already queued. Open Candidates to approve.`,
+          'success',
+        )
         holder.innerHTML = ''
-        await load()
+        window.dispatchEvent(new CustomEvent('goto-view', { detail: 'candidates' }))
       } catch (err) {
         toast(err.message, 'error')
         e.target.disabled = false

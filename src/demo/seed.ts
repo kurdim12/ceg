@@ -1,4 +1,5 @@
 import { logActivity } from '../domain/activities'
+import { scoreCandidate, type CandidateSourceType } from '../domain/candidates'
 import type { Stage } from '../domain/stages'
 
 interface DemoContact {
@@ -98,12 +99,59 @@ const DEMO_COMPANIES: DemoCompany[] = [
   },
 ]
 
+interface DemoCandidate {
+  sourceType: CandidateSourceType
+  name: string
+  domain: string | null
+  website: string | null
+  city: string
+  country: string
+  phone: string | null
+  extractedEmail: string | null
+  sourceUrl: string | null
+  evidence: Record<string, unknown>
+}
+
+/**
+ * Source-Intelligence review queue for the walkthrough: a few sourced
+ * candidates a human would approve or reject. One deliberately reuses an
+ * existing demo domain so "Approve" demonstrates the duplicate guard.
+ */
+const DEMO_CANDIDATES: DemoCandidate[] = [
+  {
+    sourceType: 'places', name: 'DEMO Cedar & Co Bakery', domain: 'demo-cedar.example',
+    website: 'https://demo-cedar.example', city: 'Lisbon', country: 'PT',
+    phone: '+351 21 555 0140', extractedEmail: 'hello@demo-cedar.example',
+    sourceUrl: 'https://demo-cedar.example',
+    evidence: { emailSource: 'https://demo-cedar.example', emailsFound: ['hello@demo-cedar.example'] },
+  },
+  {
+    sourceType: 'places', name: 'DEMO Northwind Tools', domain: 'demo-northwind.example',
+    website: 'https://demo-northwind.example', city: 'Toronto', country: 'CA',
+    phone: '+1 416 555 0141', extractedEmail: null,
+    sourceUrl: 'https://demo-northwind.example',
+    evidence: { crawl: 'no contact email found on the site' },
+  },
+  {
+    sourceType: 'places', name: 'DEMO Riverside Roasters', domain: 'demo-riverside.example',
+    website: 'https://demo-riverside.example', city: 'Nairobi', country: 'KE',
+    phone: '+254 20 555 0142', extractedEmail: 'amina@demo-riverside.example',
+    sourceUrl: 'https://demo-riverside.example',
+    evidence: { emailSource: 'https://demo-riverside.example', emailsFound: ['amina@demo-riverside.example'], note: 'matches an existing lead — approval will flag duplicate' },
+  },
+  {
+    sourceType: 'places', name: 'DEMO Plaza Florist', domain: null, website: null,
+    city: 'Madrid', country: 'ES', phone: '+34 91 555 0143', extractedEmail: null,
+    sourceUrl: null, evidence: { crawl: 'no website on the Places listing' },
+  },
+]
+
 /** Deletes previous demo rows and re-inserts the full set. Idempotent. */
 export async function resetDemoData(
   db: D1Database,
   assigneeIds: readonly [number, number],
   actor: string,
-): Promise<{ companies: number; contacts: number }> {
+): Promise<{ companies: number; contacts: number; candidates: number }> {
   // FK-safe order: clear everything that references a demo company/contact
   // BEFORE the companies/contacts themselves. Rows accumulated while working
   // demo leads (calls, drafts, enrollments, drops) reference them, so
@@ -111,6 +159,8 @@ export async function resetDemoData(
   // append-only and stay.
   const demoCompanies = 'SELECT id FROM companies WHERE is_demo = 1'
   await db.batch([
+    // Candidates may link a demo company_id — clear them before the companies.
+    db.prepare('DELETE FROM lead_candidates WHERE is_demo = 1'),
     db.prepare(`DELETE FROM call_attempts WHERE company_id IN (${demoCompanies})`),
     db.prepare(`DELETE FROM drop_requests WHERE company_id IN (${demoCompanies})`),
     db.prepare(`DELETE FROM email_messages WHERE company_id IN (${demoCompanies})`),
@@ -174,11 +224,28 @@ export async function resetDemoData(
     }
   }
 
+  for (const cand of DEMO_CANDIDATES) {
+    const { confidence, reasons } = scoreCandidate(cand)
+    await db
+      .prepare(
+        `INSERT INTO lead_candidates
+           (source_type, source_url, name, domain, website, city, country, phone,
+            extracted_email, evidence_json, confidence, status, is_demo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 1)`,
+      )
+      .bind(
+        cand.sourceType, cand.sourceUrl, cand.name, cand.domain, cand.website,
+        cand.city, cand.country, cand.phone, cand.extractedEmail,
+        JSON.stringify({ ...cand.evidence, scoring: reasons }), confidence,
+      )
+      .run()
+  }
+
   await logActivity(db, {
     entityType: 'system',
     actor,
     kind: 'demo_reset',
-    detail: { companies: DEMO_COMPANIES.length, contacts: contactCount },
+    detail: { companies: DEMO_COMPANIES.length, contacts: contactCount, candidates: DEMO_CANDIDATES.length },
   })
-  return { companies: DEMO_COMPANIES.length, contacts: contactCount }
+  return { companies: DEMO_COMPANIES.length, contacts: contactCount, candidates: DEMO_CANDIDATES.length }
 }

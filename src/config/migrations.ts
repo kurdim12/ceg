@@ -5,4 +5,4 @@
  * and `schemaState()` uses it at runtime to detect a database that is behind
  * the deployed code — the exact gap that broke the live Leads page once.
  */
-export const LATEST_MIGRATION = '0007_company_rev.sql'
+export const LATEST_MIGRATION = '0008_lead_candidates.sql'

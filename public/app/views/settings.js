@@ -60,6 +60,8 @@ export async function renderSettings(root, ctx) {
     send_held_paused: 'Send held — paused', send_held_breaker: 'Send held — breaker',
     test_email_sent: 'Test email sent', test_email_dry_run: 'Test email (dry run)',
     company_created: 'Lead created', company_deleted: 'Lead deleted', lead_edited: 'Lead edited',
+    candidate_approved: 'Candidate approved', candidate_rejected: 'Candidate rejected',
+    candidate_duplicate: 'Candidate = duplicate', candidate_failed: 'Candidate approval failed',
     stage_set_manual: 'Stage changed', secret_set: 'Key set', settings_update: 'Settings changed',
     sending_paused: 'Sending PAUSED', sending_resumed: 'Sending resumed',
     gmail_connected: 'Gmail connected', gmail_disconnected: 'Gmail disconnected',

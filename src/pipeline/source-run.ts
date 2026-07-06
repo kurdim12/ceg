@@ -1,6 +1,5 @@
-import type { PlacesAdapter, SiteFetcher, VerifierAdapter } from '../adapters/types'
+import type { PlacesAdapter, SiteFetcher } from '../adapters/types'
 import { logActivity } from '../domain/activities'
-import { resolveTimezone } from '../schedule/timezones'
 import { ingestBusiness } from './ingest'
 
 export interface SourcingParams {
@@ -12,24 +11,24 @@ export interface SourcingParams {
 export interface SourcingTally {
   requested: number
   found: number
-  created: number
+  /** New candidates parked for human review. */
+  candidates: number
+  /** Businesses that already had an open candidate — not re-created. */
   deduped: number
-  enrolled: number
-  noValidEmail: number
-  held: number
 }
 
 /**
- * One sourcing run — cron-daily or human-triggered with explicit
- * parameters (geo, business type, count are always caller-supplied;
- * nothing about geography is baked in).
+ * One sourcing run — cron-daily or human-triggered with explicit parameters
+ * (geo, business type, count are always caller-supplied; nothing about
+ * geography is baked in). Produces lead CANDIDATES only: no company is
+ * created, nothing is verified, enrolled, or emailed. A human reviews and
+ * approves candidates before they enter the CRM.
  */
 export async function runSourcing(
   db: D1Database,
   adapters: {
     places: PlacesAdapter
     fetchSite: SiteFetcher | null
-    verifier: VerifierAdapter | null
   },
   params: SourcingParams,
   now: Date,
@@ -39,37 +38,14 @@ export async function runSourcing(
   const tally: SourcingTally = {
     requested: params.count,
     found: businesses.length,
-    created: 0,
+    candidates: 0,
     deduped: 0,
-    enrolled: 0,
-    noValidEmail: 0,
-    held: 0,
   }
 
   for (const biz of businesses) {
-    const outcome = await ingestBusiness(db, biz, {
-      fetchSite: adapters.fetchSite,
-      verifier: adapters.verifier,
-      now,
-      resolveTimezone,
-    })
-    switch (outcome.kind) {
-      case 'deduped':
-        tally.deduped++
-        break
-      case 'enrolled':
-        tally.created++
-        tally.enrolled++
-        break
-      case 'no_valid_email':
-        tally.created++
-        tally.noValidEmail++
-        break
-      case 'held':
-        tally.created++
-        tally.held++
-        break
-    }
+    const outcome = await ingestBusiness(db, biz, { fetchSite: adapters.fetchSite, now })
+    if (outcome.kind === 'candidate') tally.candidates++
+    else tally.deduped++
   }
 
   await logActivity(db, {

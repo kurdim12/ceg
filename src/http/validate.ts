@@ -59,6 +59,8 @@ export const S = {
 
   stageUpdate: z.object({ stage: z.string().min(1).max(40) }),
 
+  rejectCandidate: z.object({ reason: z.string().max(500).optional() }),
+
   settingsPatch: z.record(z.string(), z.unknown()),
 
   secretPut: z.object({ value: z.string().min(1, 'value required').max(8000) }),

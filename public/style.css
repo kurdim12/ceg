@@ -597,3 +597,16 @@ tr:hover .row-actions { opacity: 1; }
 .kanban-card .kc-meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
 .kanban-card .kc-time { margin-top: 8px; }
 @media (max-width: 900px) { .kanban .lane { flex-basis: 82vw; } .view-toggle { margin-left: 0 !important; } }
+
+/* ============ Lead candidates (Source Intelligence review) ============ */
+.candidate { display: flex; flex-direction: column; gap: 10px; }
+.candidate .cand-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.candidate .cand-name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.candidate .cand-right { display: inline-flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.candidate .cand-fields { display: grid; gap: 4px; font-size: 13px; }
+.candidate .cand-fields .k { display: inline-block; min-width: 58px; color: var(--muted); font-size: 12px; }
+.candidate .cand-evidence { font-size: 12px; line-height: 1.5; padding: 8px 10px; background: var(--surface-2); border-radius: var(--r-sm); border: 1px solid var(--line-soft); word-break: break-word; }
+.candidate .cand-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.candidate .reject-form { display: flex; gap: 8px; align-items: center; }
+.candidate .reject-form .reject-reason { flex: 1; }
+@media (max-width: 900px) { .candidate .reject-form { flex-direction: column; align-items: stretch; } }

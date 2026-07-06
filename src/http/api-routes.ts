@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { getGmailFor, getLlm, getPlaces, getSiteFetcher, getVerifier } from '../adapters/factory'
+import { getGmailFor, getLlm, getPlaces, getSiteFetcher } from '../adapters/factory'
 import { confirmBulk } from '../agent/registry'
 import { runAgentChat } from '../agent/loop'
 import { SettingsValidationError } from '../config/defaults'
@@ -8,6 +8,15 @@ import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
 import { isStage } from '../domain/stages'
 import { createCompany, deleteCompany, EditConflictError, setStageManual, updateCompanyFields } from '../domain/manual-ops'
+import {
+  approveCandidate,
+  CandidateNotFoundError,
+  CandidateStateError,
+  getCandidate,
+  listCandidates,
+  rejectCandidate,
+  type CandidateStatus,
+} from '../domain/candidates'
 import { getPauseState, setSendingPaused } from '../ops/pause'
 import { runSourcing } from '../pipeline/source-run'
 import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breaker'
@@ -337,12 +346,68 @@ apiRoutes.post('/sourcing/run', async (c) => {
   }
   const tally = await runSourcing(
     c.env.DB,
-    { places, fetchSite: getSiteFetcher(), verifier: await getVerifier(c.env) },
+    { places, fetchSite: getSiteFetcher() },
     { geo, businessType, count },
     new Date(),
     `user:${c.get('session').userId}`,
   )
   return c.json({ ok: true, tally })
+})
+
+/**
+ * Source Intelligence: lead candidates awaiting human review. Sourcing writes
+ * here, never straight into companies — nothing in this list can send email.
+ */
+const CANDIDATE_STATUSES = ['new', 'approved', 'rejected', 'duplicate', 'failed', 'all'] as const
+
+apiRoutes.get('/candidates', async (c) => {
+  const status = c.req.query('status') ?? 'new'
+  if (!CANDIDATE_STATUSES.includes(status as (typeof CANDIDATE_STATUSES)[number])) {
+    return c.json({ error: `status must be one of: ${CANDIDATE_STATUSES.join(', ')}` }, 400)
+  }
+  const candidates = await listCandidates(c.env.DB, status as CandidateStatus | 'all')
+  return c.json({ candidates })
+})
+
+apiRoutes.get('/candidates/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const candidate = await getCandidate(c.env.DB, id)
+  if (!candidate) return c.json({ error: 'no such candidate' }, 404)
+  return c.json({ candidate })
+})
+
+apiRoutes.post('/candidates/:id/approve', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  try {
+    const result = await approveCandidate(c.env.DB, id, `user:${c.get('session').userId}`)
+    return c.json({ ok: true, ...result })
+  } catch (err) {
+    if (err instanceof CandidateNotFoundError) return c.json({ error: err.message }, 404)
+    if (err instanceof CandidateStateError) return c.json({ error: err.message }, 409)
+    return c.json({ error: (err as Error).message }, 400)
+  }
+})
+
+apiRoutes.post('/candidates/:id/reject', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const parsed = await parseBody(c, S.rejectCandidate)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  try {
+    const result = await rejectCandidate(
+      c.env.DB,
+      id,
+      `user:${c.get('session').userId}`,
+      parsed.data.reason ?? null,
+    )
+    return c.json({ ok: true, ...result })
+  } catch (err) {
+    if (err instanceof CandidateNotFoundError) return c.json({ error: err.message }, 404)
+    if (err instanceof CandidateStateError) return c.json({ error: err.message }, 409)
+    return c.json({ error: (err as Error).message }, 400)
+  }
 })
 
 /** Outbound drafts awaiting owner review (first-20 mode and reply drafts). */
@@ -508,6 +573,7 @@ apiRoutes.get('/audit', async (c) => {
     'bounce_matched', 'bounce_unmatched',
     'agent_send_queued', 'agent_send_held', 'agent_send_blocked',
     'company_created', 'company_deleted', 'lead_edited', 'stage_set_manual',
+    'candidate_approved', 'candidate_rejected', 'candidate_duplicate', 'candidate_failed',
     'secret_set', 'settings_update', 'sending_paused', 'sending_resumed',
     'gmail_connected', 'gmail_disconnected', 'breaker_tripped', 'breaker_reset',
   ]
