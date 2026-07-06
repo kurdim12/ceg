@@ -47,22 +47,34 @@ export function isSecretName(name: string): name is SecretName {
   return (SECRET_NAMES as readonly string[]).includes(name)
 }
 
-/** Anything with KV plus (optionally) Cloudflare-secret bindings — pass `env`. */
-export type SecretSource = { KV: KVNamespace } & Partial<Record<SecretName, string>>
+/** KV + the D1 database + (optionally) Cloudflare-secret bindings — pass `env`. */
+export type SecretSource = { KV: KVNamespace; DB?: D1Database } & Partial<Record<SecretName, string>>
 
 /**
- * Key lookup order: dashboard-pasted value in KV first (owners can rotate
- * without a deploy), then a Cloudflare secret/variable binding of the same
- * name. Either source activates the subsystem; neither means HOLD.
+ * Key lookup order, first non-empty wins:
+ *   1. KV (`secret:{NAME}`) — instant, owner-rotatable without a deploy.
+ *   2. D1 (`app_secrets`)   — durable backstop; a Git-integrated Workers
+ *      build resets dashboard variables, but never the database.
+ *   3. Cloudflare env binding of the same name — ops override.
+ * None set = HOLD (fail-safe).
  */
 export async function getSecret(source: SecretSource, name: SecretName): Promise<string | null> {
   const fromKv = await source.KV.get(`secret:${name}`)
   if (fromKv && fromKv.trim() !== '') return fromKv
+  if (source.DB) {
+    const row = await source.DB.prepare('SELECT value FROM app_secrets WHERE name = ?')
+      .bind(name)
+      .first<{ value: string }>()
+    if (row && row.value.trim() !== '') return row.value
+  }
   const fromEnv = source[name]
   return fromEnv && fromEnv.trim() !== '' ? fromEnv : null
 }
 
-/** Set by a human through settings; value never echoed back or logged. */
+/**
+ * Set by a human through settings; value never echoed back or logged. Written
+ * to BOTH KV (instant) and D1 (survives every deploy) so it can never be lost.
+ */
 export async function setSecret(
   db: D1Database,
   kv: KVNamespace,
@@ -72,6 +84,13 @@ export async function setSecret(
 ): Promise<void> {
   if (value.trim() === '') throw new Error('secret value must not be blank')
   await kv.put(`secret:${name}`, value)
+  await db
+    .prepare(
+      `INSERT INTO app_secrets (name, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(name) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    )
+    .bind(name, value)
+    .run()
   await logActivity(db, {
     entityType: 'settings',
     actor,

@@ -139,3 +139,20 @@ describe('Cloudflare-secret fallback for API keys', () => {
     expect(await getSecret({ KV: env.KV, OPENROUTER_API_KEY: '   ' }, 'OPENROUTER_API_KEY')).toBeNull()
   })
 })
+
+describe('D1-backed durable key store (survives every deploy)', () => {
+  it('reads a key from D1 when KV is empty, and setSecret writes both KV and D1', async () => {
+    const { getSecret, setSecret } = await import('../src/settings/store')
+    await createOwners()
+    // Directly seed D1 only (simulating a key set that outlived a KV/var wipe).
+    await env.DB.prepare("INSERT INTO app_secrets (name, value) VALUES ('GOOGLE_PLACES_API_KEY', 'places-in-db')").run()
+    expect(await getSecret({ KV: env.KV, DB: env.DB }, 'GOOGLE_PLACES_API_KEY')).toBe('places-in-db')
+
+    // setSecret writes both stores; the value persists in D1 even if KV is cleared.
+    await setSecret(env.DB, env.KV, 'OPENROUTER_API_KEY', 'or-durable', 'user:1')
+    const row = await env.DB.prepare("SELECT value FROM app_secrets WHERE name = 'OPENROUTER_API_KEY'").first()
+    expect(row?.value).toBe('or-durable')
+    await env.KV.delete('secret:OPENROUTER_API_KEY')
+    expect(await getSecret({ KV: env.KV, DB: env.DB }, 'OPENROUTER_API_KEY')).toBe('or-durable')
+  })
+})
