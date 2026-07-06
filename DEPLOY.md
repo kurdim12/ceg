@@ -1,5 +1,20 @@
 # Deploy — and the migration-order rule
 
+## Where it's live (read this first)
+
+- **v2 (this repo, `kurdim12/ceg`) → Worker `ceg` → `https://ceg.abdalrhmankurdi12.workers.dev`.**
+  The Cloudflare Git integration names the Worker after the repo (`ceg`), **not**
+  after `name = "maranasi-engine"` in `wrangler.toml`. This is the current system.
+- **v1 (old, `kurdim12/maranasi-crm`) → Worker `maranasi-crm` → `https://maranasi-crm.abdalrhmankurdi12.workers.dev`.**
+  Read-only reference, frozen since 2026-07-03. It serves an *older* build (its
+  `/health` returns `{ok, service}`; `/api/*` 500s on a missing `ADMIN_API_KEY`).
+  **Do not smoke-test v2 against this URL** — that mistake reads as a "stale deploy"
+  when v2 is actually fine.
+- Production D1 bound by `ceg`: `database_name = "maranasi-engine"`,
+  `database_id = ee6688e2-7188-419f-8ba7-b319bac32479`.
+- Quick liveness check: `GET https://ceg.abdalrhmankurdi12.workers.dev/health`
+  should return `product`, `dryRun`, and `schema` (`"ok"` when migrations are current).
+
 ## How this deploys
 
 The Worker is connected to GitHub via Cloudflare's Git integration. **Every
