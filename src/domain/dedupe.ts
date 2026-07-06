@@ -1,19 +1,20 @@
+import { phoneKey } from '../adapters/normalize'
+
 /**
- * Duplicate-lead detection. Domained businesses dedupe on their bare domain
- * (the strong key). Businesses WITHOUT a website — the gap that let daily
- * sourcing and manual entry pile up copies of the same shop — fall back to an
- * exact phone match, then a normalized name+city match.
+ * Duplicate-lead detection. Domained businesses dedupe on their registrable
+ * domain (the strong key, tldts-normalized). Businesses WITHOUT a website —
+ * the gap that let daily sourcing and manual entry pile up copies of the same
+ * shop — fall back to a normalized phone (libphonenumber E.164), then a
+ * normalized name+city match.
  */
 
 export function normName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-/** Digits only; null if too short to be a meaningful match key. */
+/** Canonical phone comparison key (E.164 digits); null if not usable. */
 export function normPhone(phone: string | null | undefined): string | null {
-  if (!phone) return null
-  const digits = phone.replace(/\D/g, '')
-  return digits.length >= 7 ? digits : null
+  return phoneKey(phone)
 }
 
 export interface DuplicateQuery {

@@ -14,6 +14,7 @@ import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breake
 import { approveDraft, approvedOutboundCount, isReviewModeActive, REVIEW_MODE_THRESHOLD } from '../sequence/review-mode'
 import type { Env } from '../env'
 import { requireAuth, type AuthVars } from './middleware'
+import { parseBody, S } from './validate'
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: AuthVars }>()
 
@@ -55,10 +56,11 @@ apiRoutes.get('/settings', async (c) => {
 })
 
 apiRoutes.put('/settings', async (c) => {
-  const patch = await c.req.json<Record<string, unknown>>()
+  const parsed = await parseBody(c, S.settingsPatch)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
   const actor = `user:${c.get('session').userId}`
   try {
-    const next = await updateSettings(c.env.DB, c.env.KV, patch, actor)
+    const next = await updateSettings(c.env.DB, c.env.KV, parsed.data, actor)
     return c.json({ ok: true, settings: next })
   } catch (err) {
     if (err instanceof SettingsValidationError) return c.json({ error: err.message }, 400)
@@ -69,9 +71,9 @@ apiRoutes.put('/settings', async (c) => {
 apiRoutes.put('/secrets/:name', async (c) => {
   const name = c.req.param('name')
   if (!isSecretName(name)) return c.json({ error: 'unknown secret name' }, 404)
-  const { value } = await c.req.json<{ value?: string }>()
-  if (!value || value.trim() === '') return c.json({ error: 'value required' }, 400)
-  await setSecret(c.env.DB, c.env.KV, name, value, `user:${c.get('session').userId}`)
+  const parsed = await parseBody(c, S.secretPut)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  await setSecret(c.env.DB, c.env.KV, name, parsed.data.value, `user:${c.get('session').userId}`)
   return c.json({ ok: true, name })
 })
 
@@ -91,22 +93,21 @@ apiRoutes.get('/companies', async (c) => {
 
 /** Owner-created lead (manual entry). Fields are optional except the name. */
 apiRoutes.post('/companies', async (c) => {
-  const body = await c.req.json<Record<string, unknown>>()
-  if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 200) {
-    return c.json({ error: 'name is required (max 200 chars)' }, 400)
-  }
+  const parsed = await parseBody(c, S.createCompany)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const body = parsed.data
   try {
     const { id } = await createCompany(
       c.env.DB,
       {
         name: body.name,
-        website: typeof body.website === 'string' ? body.website : null,
-        city: typeof body.city === 'string' ? body.city : null,
-        country: typeof body.country === 'string' ? body.country : null,
-        timezone: typeof body.timezone === 'string' ? body.timezone : null,
-        phone: typeof body.phone === 'string' ? body.phone : null,
-        businessType: typeof body.businessType === 'string' ? body.businessType : null,
-        assigneeId: typeof body.assigneeId === 'number' ? body.assigneeId : null,
+        website: body.website ?? null,
+        city: body.city ?? null,
+        country: body.country ?? null,
+        timezone: body.timezone ?? null,
+        phone: body.phone ?? null,
+        businessType: body.businessType ?? null,
+        assigneeId: body.assigneeId ?? null,
       },
       `user:${c.get('session').userId}`,
     )
@@ -120,11 +121,13 @@ apiRoutes.post('/companies', async (c) => {
 apiRoutes.patch('/companies/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
-  const patch = await c.req.json<Record<string, unknown>>()
+  const parsed = await parseBody(c, S.editCompany)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const patch = parsed.data
   // Optional optimistic-concurrency token (the rev the client last read).
   const expectedRev = typeof patch.expectedRev === 'number' ? patch.expectedRev : undefined
   try {
-    const result = await updateCompanyFields(c.env.DB, id, patch, `user:${c.get('session').userId}`, expectedRev)
+    const result = await updateCompanyFields(c.env.DB, id, patch as Record<string, unknown>, `user:${c.get('session').userId}`, expectedRev)
     return c.json({ ok: true, ...result })
   } catch (err) {
     if (err instanceof EditConflictError) return c.json({ error: err.message }, 409)
@@ -137,8 +140,10 @@ apiRoutes.patch('/companies/:id', async (c) => {
 apiRoutes.put('/companies/:id/stage', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
-  const { stage } = await c.req.json<{ stage?: string }>()
-  if (!stage || !isStage(stage)) return c.json({ error: 'unknown stage' }, 400)
+  const parsed = await parseBody(c, S.stageUpdate)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const { stage } = parsed.data
+  if (!isStage(stage)) return c.json({ error: 'unknown stage' }, 400)
   const current = await c.env.DB.prepare('SELECT stage_version AS v FROM companies WHERE id = ?')
     .bind(id)
     .first<{ v: number }>()
@@ -526,14 +531,10 @@ apiRoutes.put('/me/booking-link', async (c) => {
 
 /** Chat with the CRM agent. It acts only through its tool registry. */
 apiRoutes.post('/agent/chat', async (c) => {
-  const { message, history, context } = await c.req.json<{
-    message?: string
-    history?: Array<{ role: 'user' | 'assistant'; text: string }>
-    context?: { view?: unknown; record?: { id?: unknown; name?: unknown } }
-  }>()
-  if (!message || message.trim() === '' || message.length > 4000) {
-    return c.json({ error: 'message required (max 4000 chars)' }, 400)
-  }
+  const parsed = await parseBody(c, S.agentChat)
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400)
+  const { message, history } = parsed.data
+  const context = parsed.data.context as { view?: unknown; record?: { id?: unknown; name?: unknown } } | undefined
   // Screen context is a UI-provided hint (which view / which lead is open).
   // Sanitised to safe primitives; the agent still re-reads by id before acting.
   const screen: { view?: string; record?: { id: number; name: string } } = {}

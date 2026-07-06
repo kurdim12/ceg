@@ -12,7 +12,10 @@
     "check": "npm run typecheck && npm run test && npm run check:dialogs && npm run check:geo"
   },
   "dependencies": {
-    "hono": "^4.6.0"
+    "hono": "^4.6.0",
+    "libphonenumber-js": "^1.13.8",
+    "tldts": "^7.4.6",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.8.19",

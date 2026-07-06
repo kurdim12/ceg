@@ -25,13 +25,13 @@ export function extractEmails(html: string, limit = 10): string[] {
     .slice(0, limit)
 }
 
-/** Dedupe key for companies (map §4: dedupe by domain, deployed — keep). */
+import { domainNormalizer } from '../adapters/normalize'
+
+/**
+ * Dedupe key for companies (map §4: dedupe by domain, deployed — keep).
+ * Delegates to the tldts-backed normalizer so subdomains and multi-part TLDs
+ * (e.g. sub.example.co.uk → example.co.uk) resolve to one registrable domain.
+ */
 export function domainOf(website: string | null): string | null {
-  if (!website) return null
-  try {
-    const url = new URL(website.startsWith('http') ? website : `https://${website}`)
-    return url.hostname.replace(/^www\./, '').toLowerCase()
-  } catch {
-    return null
-  }
+  return domainNormalizer.registrableDomain(website)
 }

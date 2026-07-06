@@ -6,6 +6,7 @@ import { getBreaker } from '../sequence/breaker'
 import { getPauseState } from '../ops/pause'
 import { getSettings } from '../settings/store'
 import { draftReply } from '../inbox/draft-reply'
+import { S, validateArgs } from '../http/validate'
 import type { LlmAdapter } from '../adapters/types'
 
 /**
@@ -152,10 +153,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     description:
       'Queue an email to a contact through the SAFE send pipeline (verification, suppression, caps, window, breaker, pause, DRY_RUN all apply). A suppressed contact is refused; an unverified/blocked contact is held as a draft for owner review — never sent directly. Args: companyId, contactId, subject, body.',
     async execute(ctx, args) {
-      const companyId = num(args, 'companyId')
-      const contactId = num(args, 'contactId')
-      const subject = str(args, 'subject', 300)
-      const body = str(args, 'body', 20_000)
+      const { companyId, contactId, subject, body } = validateArgs(S.agentSendEmail, args)
       const company = await ctx.db
         .prepare('SELECT assignee_id AS assigneeId FROM companies WHERE id = ?')
         .bind(companyId)
@@ -238,11 +236,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     name: 'bulk_move_stage',
     description: `Move many companies to a stage. More than ${BULK_CONFIRM_LIMIT} requires owner confirmation (returns a preview + token). Args: companyIds[], to.`,
     async execute(ctx, args) {
-      const ids = Array.isArray(args.companyIds)
-        ? args.companyIds.filter((v): v is number => Number.isInteger(v))
-        : []
-      if (ids.length === 0) throw new Error('companyIds must be a non-empty integer array')
-      const to = str(args, 'to', 40)
+      const { companyIds: ids, to } = validateArgs(S.agentBulkMoveStage, args)
       if (!isStage(to) || to === 'dropped') throw new Error('unknown or gated stage')
 
       if (ids.length > BULK_CONFIRM_LIMIT) {

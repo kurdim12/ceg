@@ -1,3 +1,4 @@
+import { domainNormalizer } from '../adapters/normalize'
 import { activityStatement, logActivity } from './activities'
 import { findDuplicateCompany } from './dedupe'
 import { isStage, type Stage } from './stages'
@@ -34,16 +35,10 @@ const EDITABLE_COLUMNS: Record<keyof CompanyInput, string> = {
   assigneeId: 'assignee_id',
 }
 
-/** Normalise a website into an https URL + its bare domain (for dedupe). */
+/** Normalise a website into an https URL + its registrable domain (for dedupe). */
 function deriveWebsite(raw: string): { website: string; domain: string | null } {
   const withScheme = raw.includes('://') ? raw : `https://${raw}`
-  let domain: string | null = null
-  try {
-    domain = new URL(withScheme).hostname.replace(/^www\./, '').toLowerCase() || null
-  } catch {
-    domain = null
-  }
-  return { website: withScheme, domain }
+  return { website: withScheme, domain: domainNormalizer.registrableDomain(withScheme) }
 }
 
 /** Coerce one input value for its column, enforcing the same limits the agent uses. */
