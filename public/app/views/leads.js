@@ -52,7 +52,6 @@ export async function renderLeads(root, ctx) {
   let mode = 'list'
 
   root.innerHTML = `
-    <div class="stat-row" id="lead-stats"></div>
     <div class="toolbar">
       <input type="search" id="lead-search" placeholder="Search companies…" aria-label="Search companies" />
       <div class="segmented" id="stage-chips"></div>
@@ -136,20 +135,6 @@ export async function renderLeads(root, ctx) {
     })
   })
 
-  function drawStats() {
-    const count = (stages) => companies.filter((c) => stages.includes(c.stage)).length
-    const tiles = [
-      ['In pipeline', companies.length, 'all leads', true],
-      ['Active outreach', count(['new', 'email_sequence']), 'new + in sequence'],
-      ['Engaged', count(['replied', 'meeting_booked', 'deal']), 'replied through deal'],
-      ['Won', count(['won']), 'closed'],
-      ['Needs a call', count(['no_valid_email', 'unresponsive_email']), 'in call queues'],
-    ]
-    root.querySelector('#lead-stats').innerHTML = tiles
-      .map(([k, v, c, accent]) => `<div class="stat${accent ? ' accent' : ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="c">${c}</div></div>`)
-      .join('')
-  }
-
   function drawChips() {
     const present = [...new Set(companies.map((c) => c.stage))]
     root.querySelector('#stage-chips').innerHTML = [
@@ -225,7 +210,6 @@ export async function renderLeads(root, ctx) {
           const c = companies.find((x) => String(x.id) === String(id))
           if (c) c.stage = sel.value
           toast(`Moved to ${STAGE_LABELS[sel.value]}`, 'success')
-          drawStats()
         } catch (err) {
           toast(err.message, 'error')
           await load()
@@ -302,13 +286,13 @@ export async function renderLeads(root, ctx) {
         if (!c || c.stage === to) return
         const from = c.stage
         c.stage = to
-        drawBoard(); drawStats()
+        drawBoard()
         try {
           await api.put(`/api/companies/${dragId}/stage`, { stage: to })
           toast(`${c.name} → ${STAGE_LABELS[to]}`, 'success')
         } catch (err) {
           c.stage = from
-          drawBoard(); drawStats()
+          drawBoard()
           toast(err.message, 'error')
         }
       })
@@ -318,7 +302,6 @@ export async function renderLeads(root, ctx) {
   async function load() {
     const data = await api.get('/api/companies')
     companies = data.companies
-    drawStats()
     drawChips()
     render()
   }

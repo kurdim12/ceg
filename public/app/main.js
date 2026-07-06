@@ -104,6 +104,7 @@ async function renderShell(me) {
         <div class="user-box">
           <div class="avatar">${esc(initials(me.name))}</div>
           <div class="who"><div class="n">${esc(me.name)}</div><div class="e">${esc(me.email)}</div></div>
+          <button class="out" id="theme-toggle" title="Toggle theme" aria-label="Toggle light or dark theme"></button>
           <button class="out" id="logout" title="Sign out" aria-label="Sign out">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
           </button>
@@ -129,6 +130,18 @@ async function renderShell(me) {
       ).join('')}
       <button id="more-tab">${ICONS.more}<span>More</span></button>
     </nav>`
+
+  const SUN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
+  const MOON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
+  const themeBtn = app.querySelector('#theme-toggle')
+  const paintTheme = () => { themeBtn.innerHTML = document.documentElement.dataset.theme === 'dark' ? SUN : MOON }
+  paintTheme()
+  themeBtn.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = next
+    try { localStorage.setItem('theme', next) } catch { /* private mode: session-only */ }
+    paintTheme()
+  })
 
   app.querySelector('#logout').addEventListener('click', async () => {
     await api.post('/api/auth/logout')
