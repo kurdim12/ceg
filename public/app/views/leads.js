@@ -1,19 +1,21 @@
 import { api } from '../api.js'
 import { toast } from '../toast.js'
 import { timeChip } from '../timechip.js'
+import { confirmModal } from '../modal.js'
 
-const STAGE_LABELS = {
-  new: 'New',
-  email_sequence: 'In sequence',
-  replied: 'Replied',
-  meeting_booked: 'Meeting booked',
-  deal: 'Deal',
-  won: 'Won',
-  lost: 'Lost',
-  unresponsive_email: 'Unresponsive',
-  no_valid_email: 'No valid email',
-  dropped: 'Dropped',
-}
+const STAGES = [
+  ['new', 'New'],
+  ['email_sequence', 'In sequence'],
+  ['replied', 'Replied'],
+  ['meeting_booked', 'Meeting booked'],
+  ['deal', 'Deal'],
+  ['won', 'Won'],
+  ['lost', 'Lost'],
+  ['unresponsive_email', 'Unresponsive'],
+  ['no_valid_email', 'No valid email'],
+  ['dropped', 'Dropped'],
+]
+const STAGE_LABELS = Object.fromEntries(STAGES)
 
 const EMPTY_BY_STAGE = {
   unresponsive_email: 'No leads are unresponsive. Good.',
@@ -22,17 +24,21 @@ const EMPTY_BY_STAGE = {
   dropped: 'The drop pool is empty.',
 }
 
+const AVATAR_HUES = ['#2563EB', '#7C5CFC', '#0EA5B5', '#0EA371', '#D9820A', '#E5484D']
+
 function esc(text) {
   const div = document.createElement('div')
   div.textContent = text ?? ''
   return div.innerHTML
 }
-
 function initials(name) {
   return (name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
 }
+function hue(id) {
+  return AVATAR_HUES[id % AVATAR_HUES.length]
+}
 
-export async function renderLeads(root) {
+export async function renderLeads(root, ctx) {
   let companies = []
   let search = ''
   let stageFilter = null
@@ -44,7 +50,7 @@ export async function renderLeads(root) {
       <div class="segmented" id="stage-chips"></div>
     </div>
     <div class="view-actions">
-      <button class="secondary" id="run-sourcing">Find new leads</button>
+      <button id="run-sourcing">Find new leads</button>
       <button class="ghost" id="demo-reset">Regenerate demo data</button>
     </div>
     <div id="sourcing-form"></div>
@@ -100,14 +106,14 @@ export async function renderLeads(root) {
   function drawStats() {
     const count = (stages) => companies.filter((c) => stages.includes(c.stage)).length
     const tiles = [
-      ['In pipeline', companies.length, 'all leads'],
+      ['In pipeline', companies.length, 'all leads', true],
       ['Active outreach', count(['new', 'email_sequence']), 'new + in sequence'],
       ['Engaged', count(['replied', 'meeting_booked', 'deal']), 'replied through deal'],
       ['Won', count(['won']), 'closed'],
       ['Needs a call', count(['no_valid_email', 'unresponsive_email']), 'in call queues'],
     ]
     root.querySelector('#lead-stats').innerHTML = tiles
-      .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v num">${v}</div><div class="c">${c}</div></div>`)
+      .map(([k, v, c, accent]) => `<div class="stat${accent ? ' accent' : ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="c">${c}</div></div>`)
       .join('')
   }
 
@@ -115,9 +121,7 @@ export async function renderLeads(root) {
     const present = [...new Set(companies.map((c) => c.stage))]
     root.querySelector('#stage-chips').innerHTML = [
       `<button class="${stageFilter === null ? 'on' : ''}" data-stage="">All</button>`,
-      ...present.map(
-        (s) => `<button class="${stageFilter === s ? 'on' : ''}" data-stage="${s}">${STAGE_LABELS[s] ?? s}</button>`,
-      ),
+      ...present.map((s) => `<button class="${stageFilter === s ? 'on' : ''}" data-stage="${s}">${STAGE_LABELS[s] ?? s}</button>`),
     ].join('')
     root.querySelectorAll('#stage-chips button').forEach((b) => {
       b.addEventListener('click', () => {
@@ -138,44 +142,82 @@ export async function renderLeads(root) {
     if (companies.length === 0) {
       container.innerHTML = `
         <div class="card empty">
+          <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M2 12h20"/></svg></div>
           <div class="t">No leads yet</div>
           <div class="d">Run sourcing to find businesses, or regenerate the demo data to explore every screen safely.</div>
+          <button id="empty-source">Find new leads</button>
         </div>`
+      container.querySelector('#empty-source').addEventListener('click', () => root.querySelector('#run-sourcing').click())
       return
     }
     if (rows.length === 0) {
-      const line = stageFilter && EMPTY_BY_STAGE[stageFilter]
-        ? EMPTY_BY_STAGE[stageFilter]
-        : 'Nothing matches. Clear the search or pick another stage.'
+      const line = (stageFilter && EMPTY_BY_STAGE[stageFilter]) || 'Nothing matches. Clear the search or pick another stage.'
       container.innerHTML = `<div class="card empty"><div class="t">${line}</div></div>`
       return
     }
     container.innerHTML = `
-      <div class="table-wrap"><table class="leads-table">
+      <div class="table-wrap"><div class="table-scroll"><table class="leads-table">
         <thead><tr>
-          <th>Company</th><th>City</th><th>Stage</th><th>Their time</th><th>Assignee</th><th class="num">Contacts</th><th class="num">Phone</th>
+          <th>Company</th><th>City</th><th>Stage</th><th>Their time</th><th>Assignee</th><th class="num">Contacts</th><th class="num">Phone</th><th></th>
         </tr></thead>
         <tbody>
-          ${rows
-            .map(
-              (c) => `
-            <tr class="clickable" data-id="${c.id}" tabindex="0">
-              <td><span class="co"><span class="ini">${esc(initials(c.name))}</span><span class="nm">${esc(c.name)}</span>${c.isDemo ? '<span class="demo-tag">demo</span>' : ''}</span></td>
-              <td>${esc(c.city ?? '—')}</td>
-              <td><span class="chip ${esc(c.stage)}">${esc(STAGE_LABELS[c.stage] ?? c.stage)}</span></td>
-              <td>${timeChip(c.timezone)}</td>
-              <td>${esc(c.assigneeName ?? 'Unassigned')}</td>
-              <td class="num">${c.contactCount}</td>
+          ${rows.map((c) => `
+            <tr data-id="${c.id}">
+              <td><span class="co"><span class="ini" style="background:${hue(c.id)}">${esc(initials(c.name))}</span><span class="nm link" data-open="${c.id}">${esc(c.name)}</span>${c.isDemo ? '<span class="demo-tag">demo</span>' : ''}</span></td>
+              <td class="hide-m">${esc(c.city ?? '—')}</td>
+              <td>
+                <span class="stage-select">
+                  <select data-stage-for="${c.id}" aria-label="Change stage">
+                    ${STAGES.map(([v, l]) => `<option value="${v}" ${v === c.stage ? 'selected' : ''}>${l}</option>`).join('')}
+                  </select>
+                </span>
+              </td>
+              <td class="hide-m">${timeChip(c.timezone)}</td>
+              <td class="hide-m">${esc(c.assigneeName ?? 'Unassigned')}</td>
+              <td class="num hide-m">${c.contactCount}</td>
               <td class="num">${esc(c.phone ?? '—')}${c.phoneConfirmed ? ' ✓' : ''}</td>
-            </tr>`,
-            )
-            .join('')}
+              <td><span class="row-actions"><button class="icon-btn" data-del="${c.id}" title="Delete lead" aria-label="Delete lead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></span></td>
+            </tr>`).join('')}
         </tbody>
-      </table></div>`
-    container.querySelectorAll('tr.clickable').forEach((row) => {
-      row.addEventListener('click', () => drawDetail(row.dataset.id))
-      row.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') drawDetail(row.dataset.id)
+      </table></div></div>`
+
+    container.querySelectorAll('[data-open]').forEach((el) =>
+      el.addEventListener('click', () => drawDetail(el.dataset.open)))
+
+    container.querySelectorAll('select[data-stage-for]').forEach((sel) => {
+      sel.addEventListener('change', async () => {
+        const id = sel.dataset.stageFor
+        try {
+          await api.put(`/api/companies/${id}/stage`, { stage: sel.value })
+          const c = companies.find((x) => String(x.id) === String(id))
+          if (c) c.stage = sel.value
+          toast(`Moved to ${STAGE_LABELS[sel.value]}`, 'success')
+          drawStats()
+        } catch (err) {
+          toast(err.message, 'error')
+          await load()
+        }
+      })
+    })
+
+    container.querySelectorAll('[data-del]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.del
+        const c = companies.find((x) => String(x.id) === String(id))
+        const go = await confirmModal({
+          title: `Delete ${c?.name ?? 'this lead'}?`,
+          body: 'This permanently removes the company and everything attached to it — contacts, emails, calls, deals. There is no undo.',
+          confirmLabel: 'Delete permanently',
+          danger: true,
+        })
+        if (!go) return
+        try {
+          await api.delete(`/api/companies/${id}`)
+          toast('Lead deleted', 'success')
+          await load()
+        } catch (err) {
+          toast(err.message, 'error')
+        }
       })
     })
   }
@@ -187,19 +229,13 @@ export async function renderLeads(root) {
     detail.innerHTML = `
       <h2>${esc(company?.name ?? 'Lead')} — activity</h2>
       <div class="card">
-        ${
-          activities.length === 0
-            ? '<div class="hint">No activity yet for this lead.</div>'
-            : activities
-                .map(
-                  (a) => `
-          <div class="activity">
-            <div>${esc(a.kind.replaceAll('_', ' '))}</div>
-            <div class="meta">${esc(a.actor)} · ${esc(a.createdAt)} UTC</div>
-          </div>`,
-                )
-                .join('')
-        }
+        ${activities.length === 0
+          ? '<div class="hint">No activity yet for this lead.</div>'
+          : activities.map((a) => `
+            <div class="activity">
+              <div>${esc(a.kind.replaceAll('_', ' '))}</div>
+              <div class="meta">${esc(a.actor)} · ${esc(a.createdAt)} UTC</div>
+            </div>`).join('')}
       </div>`
     detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
@@ -213,4 +249,5 @@ export async function renderLeads(root) {
   }
 
   await load()
+  void ctx
 }

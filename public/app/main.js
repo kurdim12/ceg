@@ -92,7 +92,7 @@ async function renderShell(me) {
   app.innerHTML = `
     <div class="shell">
       <aside class="sidebar">
-        <div class="brand"><div class="mark">M</div><div class="name">Maranasi</div></div>
+        <div class="brand"><div class="mark">M</div><div><div class="name">Maranasi</div><div class="env">Outreach engine</div></div></div>
         <nav class="nav">
           ${GROUPS.map(
             (g) => `

@@ -1,9 +1,9 @@
 import { api } from '../api.js'
 
 const COLUMNS = [
-  { stage: 'deal', label: 'Deal', dot: 'var(--stage-deal)' },
-  { stage: 'won', label: 'Won', dot: 'var(--stage-won)' },
-  { stage: 'lost', label: 'Lost', dot: 'var(--stage-lost)' },
+  { stage: 'deal', label: 'Deal', dot: 'var(--st-deal)' },
+  { stage: 'won', label: 'Won', dot: 'var(--st-won)' },
+  { stage: 'lost', label: 'Lost', dot: 'var(--st-lost)' },
 ]
 
 const usd = new Intl.NumberFormat('en-US', {
