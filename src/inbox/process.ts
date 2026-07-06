@@ -3,6 +3,7 @@ import type { Settings } from '../config/defaults'
 import { logActivity } from '../domain/activities'
 import { readStage, transitionStage } from '../domain/transitions'
 import { updateBreaker } from '../sequence/breaker'
+import { parseBounce } from './bounce'
 import { classifyInbound } from './triage'
 import { draftReply } from './draft-reply'
 
@@ -32,6 +33,13 @@ export async function processInboundMessage(
   deps: ProcessDeps,
   inbound: InboundEmail,
 ): Promise<{ handled: boolean; cls?: string }> {
+  // Bounces first: real DSNs come from mailer-daemon/postmaster and never match
+  // a contact by sender, so they must be detected structurally, not by triage.
+  const bounce = parseBounce(inbound)
+  if (bounce.isBounce) {
+    return handleBounce(db, kv, deps, inbound, bounce.failedRecipient)
+  }
+
   const contact = await db
     .prepare(
       `SELECT ct.id AS contactId, ct.company_id AS companyId
@@ -235,4 +243,99 @@ export async function processInboundMessage(
     }
   }
   return { handled: true, cls: triage.cls }
+}
+
+/**
+ * A delivery-status notification. Attribute it to the failed recipient's
+ * contact, mark that contact's last real send as bounced (feeding the
+ * breaker), invalidate the address, and stop its sequence. A bounce we cannot
+ * attribute to a known contact is audited as `bounce_unmatched` so it is never
+ * silently dropped.
+ */
+async function handleBounce(
+  db: D1Database,
+  kv: KVNamespace,
+  deps: ProcessDeps,
+  inbound: InboundEmail,
+  failedRecipient: string | null,
+): Promise<{ handled: boolean; cls?: string }> {
+  const contact = failedRecipient
+    ? await db
+        .prepare(
+          `SELECT ct.id AS contactId, ct.company_id AS companyId
+           FROM contacts ct WHERE lower(ct.email) = ? ORDER BY ct.id LIMIT 1`,
+        )
+        .bind(failedRecipient.toLowerCase())
+        .first<{ contactId: number; companyId: number }>()
+    : null
+
+  if (!contact) {
+    await logActivity(db, {
+      entityType: 'system',
+      actor: 'system:inbox',
+      kind: 'bounce_unmatched',
+      detail: {
+        from: inbound.fromEmail,
+        failedRecipient: failedRecipient ?? null,
+        subject: inbound.subject.slice(0, 120),
+      },
+    })
+    return { handled: false, cls: 'bounce' }
+  }
+
+  // Mark the most recent real send to this contact as bounced (retains sent_at,
+  // so the breaker counts it as both a send and a bounce).
+  const lastSent = await db
+    .prepare(
+      `SELECT id FROM email_messages
+       WHERE contact_id = ? AND direction = 'outbound' AND status = 'sent'
+       ORDER BY sent_at DESC LIMIT 1`,
+    )
+    .bind(contact.contactId)
+    .first<{ id: number }>()
+  if (lastSent) {
+    await db
+      .prepare(`UPDATE email_messages SET status = 'bounced', bounced_at = ? WHERE id = ?`)
+      .bind(deps.now.toISOString(), lastSent.id)
+      .run()
+  }
+  await db
+    .prepare(`UPDATE contacts SET email_status = 'invalid', updated_at = datetime('now') WHERE id = ?`)
+    .bind(contact.contactId)
+    .run()
+  await db
+    .prepare(
+      `UPDATE sequence_enrollments SET status = 'stopped', updated_at = datetime('now')
+       WHERE contact_id = ? AND status IN ('active', 'paused')`,
+    )
+    .bind(contact.contactId)
+    .run()
+  await logActivity(db, {
+    entityType: 'contact',
+    entityId: contact.contactId,
+    actor: 'system:inbox',
+    kind: 'bounce_matched',
+    detail: { failedRecipient, messageId: lastSent?.id ?? null, from: inbound.fromEmail },
+  })
+
+  // Route the lead to the call queue if it lost its last deliverable email.
+  const state = await readStage(db, contact.companyId)
+  const otherValid = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM contacts
+       WHERE company_id = ? AND id != ? AND email_status = 'valid'`,
+    )
+    .bind(contact.companyId, contact.contactId)
+    .first<{ n: number }>()
+  if (state && state.stage === 'email_sequence' && (otherValid?.n ?? 0) === 0) {
+    await transitionStage(db, {
+      companyId: contact.companyId, from: 'email_sequence', to: 'no_valid_email',
+      expectedVersion: state.version, actor: 'system:inbox',
+      detail: { reason: 'bounce (DSN), no other valid email — route to call queue' },
+    })
+  }
+
+  // Feed the breaker with the real, attributed bounce.
+  await updateBreaker(db, kv, deps.settings, deps.now)
+  return { handled: true, cls: 'bounce' }
 }

@@ -51,7 +51,12 @@ export async function renderSettings(root, ctx) {
 
   const AUDIT_LABELS = {
     login: 'Signed in',
-    email_sent: 'Email sent', draft_approved: 'Draft approved', drafts_auto_approved: 'Drafts auto-approved',
+    email_sent: 'Email sent', send_claimed: 'Send claimed', send_failed: 'Send FAILED',
+    send_needs_review: 'Send needs review', send_held_gmail: 'Send held — no inbox',
+    bounce_matched: 'Bounce recorded', bounce_unmatched: 'Bounce (unmatched)',
+    agent_send_queued: 'Assistant queued send', agent_send_held: 'Assistant send held',
+    agent_send_blocked: 'Assistant send blocked',
+    draft_approved: 'Draft approved', drafts_auto_approved: 'Drafts auto-approved',
     send_held_paused: 'Send held — paused', send_held_breaker: 'Send held — breaker',
     test_email_sent: 'Test email sent', test_email_dry_run: 'Test email (dry run)',
     company_created: 'Lead created', company_deleted: 'Lead deleted', lead_edited: 'Lead edited',

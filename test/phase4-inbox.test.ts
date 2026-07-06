@@ -131,11 +131,22 @@ describe('inbound consequences', () => {
     expect(audit).not.toBeNull()
   })
 
-  it('a bounce kills that email, feeds the breaker, and routes to the call queue', async () => {
+  it('a realistic mailer-daemon DSN kills that email, feeds the breaker, and routes to the call queue', async () => {
     const lead = await leadInSequence()
+    // A real bounce comes from the daemon, NOT the lead, and names the failed
+    // recipient in DSN fields — the case the old fixture never exercised.
     await processInboundMessage(env.DB, env.KV, deps(), {
-      fromEmail: lead.email, subject: 'Delivery Status Notification (Failure)',
-      body: 'mailer-daemon: address not found', toUserId: lead.ownerA,
+      fromEmail: 'mailer-daemon@googlemail.com',
+      subject: 'Delivery Status Notification (Failure)',
+      body: [
+        'This is the mail delivery system at googlemail.com.',
+        '',
+        `Final-Recipient: rfc822; ${lead.email}`,
+        'Action: failed',
+        'Status: 5.1.1',
+        'Diagnostic-Code: smtp; 550 5.1.1 The email account that you tried to reach does not exist.',
+      ].join('\n'),
+      toUserId: lead.ownerA,
     })
     expect(await countRows('email_messages', "status = 'bounced'")).toBe(1)
     const contact = await env.DB.prepare('SELECT email_status FROM contacts WHERE id = ?')
@@ -143,6 +154,7 @@ describe('inbound consequences', () => {
       .first<{ email_status: string }>()
     expect(contact?.email_status).toBe('invalid')
     expect(await stage(lead.companyId)).toBe('no_valid_email') // never deleted — call path
+    expect(await countRows('activities', "kind = 'bounce_matched'")).toBe(1)
   })
 
   it('INJECTION DEFENSE: reply-embedded instructions classify as content, zero writes', async () => {

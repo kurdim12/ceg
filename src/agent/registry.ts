@@ -2,6 +2,8 @@ import { logActivity } from '../domain/activities'
 import { isStage, type Stage } from '../domain/stages'
 import { readStage, transitionStage } from '../domain/transitions'
 import { deleteCompany, setStageManual } from '../domain/manual-ops'
+import { getBreaker } from '../sequence/breaker'
+import { getPauseState } from '../ops/pause'
 import { getSettings } from '../settings/store'
 import { draftReply } from '../inbox/draft-reply'
 import type { LlmAdapter } from '../adapters/types'
@@ -148,7 +150,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   {
     name: 'send_email',
     description:
-      'Queue an email to a contact for sending (goes out on the next dispatch, respecting caps, window, suppression, breaker, and DRY_RUN). Args: companyId, contactId, subject, body.',
+      'Queue an email to a contact through the SAFE send pipeline (verification, suppression, caps, window, breaker, pause, DRY_RUN all apply). A suppressed contact is refused; an unverified/blocked contact is held as a draft for owner review — never sent directly. Args: companyId, contactId, subject, body.',
     async execute(ctx, args) {
       const companyId = num(args, 'companyId')
       const contactId = num(args, 'contactId')
@@ -159,10 +161,51 @@ export const AGENT_TOOLS: AgentTool[] = [
         .bind(companyId)
         .first<{ assigneeId: number | null }>()
       const contact = await ctx.db
-        .prepare('SELECT email FROM contacts WHERE id = ? AND company_id = ?')
+        .prepare('SELECT email, email_status AS emailStatus FROM contacts WHERE id = ? AND company_id = ?')
         .bind(contactId, companyId)
-        .first<{ email: string | null }>()
+        .first<{ email: string | null; emailStatus: string }>()
       if (!company || !contact?.email) throw new Error('company or contact email not found')
+      const email = contact.email.toLowerCase()
+
+      // Suppressed → hard refuse. Never queue, never draft.
+      const suppressed = await ctx.db.prepare('SELECT 1 FROM suppression WHERE email = ?').bind(email).first()
+      if (suppressed) {
+        await logActivity(ctx.db, {
+          entityType: 'contact', entityId: contactId, actor: 'agent',
+          kind: 'agent_send_blocked', detail: { reason: 'suppressed', email },
+        })
+        return { blocked: true, reason: 'That address is on the suppression list — nothing was sent or drafted.' }
+      }
+
+      // Determine whether it is safe to queue for real sending. Anything short
+      // of a verified contact with sending armed is HELD as a draft for review.
+      const [breaker, pause] = await Promise.all([getBreaker(ctx.kv), getPauseState(ctx.kv)])
+      let holdReason: string | null = null
+      if (contact.emailStatus !== 'valid') holdReason = `the contact's email is "${contact.emailStatus}", not verified valid`
+      else if (pause.paused) holdReason = 'sending is paused (emergency stop)'
+      else if (breaker.tripped) holdReason = 'the bounce breaker is tripped'
+
+      if (holdReason) {
+        const row = await ctx.db
+          .prepare(
+            `INSERT INTO email_messages
+               (company_id, contact_id, direction, status, subject, body, to_email, from_user_id)
+             VALUES (?, ?, 'outbound', 'draft', ?, ?, ?, ?) RETURNING id`,
+          )
+          .bind(companyId, contactId, subject, body, contact.email, company.assigneeId)
+          .first<{ id: number }>()
+        await logActivity(ctx.db, {
+          entityType: 'contact', entityId: contactId, actor: 'agent',
+          kind: 'agent_send_held', detail: { messageId: row!.id, reason: holdReason },
+        })
+        return {
+          held: true, draftId: row!.id,
+          reason: `Held as a draft for owner review because ${holdReason}. Nothing was sent.`,
+        }
+      }
+
+      // Verified + armed → create an approved message. It still passes every
+      // send-path wall (suppression re-check, window, cap, breaker, DRY_RUN).
       const row = await ctx.db
         .prepare(
           `INSERT INTO email_messages
@@ -173,11 +216,11 @@ export const AGENT_TOOLS: AgentTool[] = [
         .first<{ id: number }>()
       await logActivity(ctx.db, {
         entityType: 'contact', entityId: contactId, actor: 'agent',
-        kind: 'email_queued_by_agent', detail: { messageId: row!.id },
+        kind: 'agent_send_queued', detail: { messageId: row!.id },
       })
       return {
         ok: true, messageId: row!.id,
-        note: 'Queued. It sends on the next dispatch cycle if DRY_RUN is off and the send guards pass.',
+        note: 'Queued. Verification passed; caps, window, breaker, pause and DRY_RUN still apply before it sends.',
       }
     },
   },

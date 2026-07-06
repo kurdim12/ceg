@@ -470,8 +470,11 @@ apiRoutes.get('/readiness', async (c) => {
  */
 apiRoutes.get('/audit', async (c) => {
   const KINDS = [
-    'login', 'email_sent', 'draft_approved', 'drafts_auto_approved', 'send_held_paused',
-    'send_held_breaker', 'test_email_sent', 'test_email_dry_run',
+    'login', 'email_sent', 'send_claimed', 'send_failed', 'send_needs_review',
+    'send_held_paused', 'send_held_breaker', 'send_held_gmail',
+    'draft_approved', 'drafts_auto_approved', 'test_email_sent', 'test_email_dry_run',
+    'bounce_matched', 'bounce_unmatched',
+    'agent_send_queued', 'agent_send_held', 'agent_send_blocked',
     'company_created', 'company_deleted', 'lead_edited', 'stage_set_manual',
     'secret_set', 'settings_update', 'sending_paused', 'sending_resumed',
     'gmail_connected', 'gmail_disconnected', 'breaker_tripped', 'breaker_reset',
