@@ -16,14 +16,16 @@ live (`GET /api/readiness`).
 ```bash
 # from the repo root, on the branch you intend to ship
 npm ci
-npm run check                       # must be green
+npm run check                       # must be green (incl. check:migrations)
 
-# apply migrations to the LIVE database (not automatic on deploy)
-npx wrangler d1 migrations apply maranasi-engine --remote
-
-# deploy the Worker
-npx wrangler deploy
+# apply migrations to the LIVE db, THEN deploy — one command, correct order:
+npm run deploy                      # = wrangler d1 migrations apply … --remote && wrangler deploy
 ```
+
+> Migrations are NOT auto-applied by the Cloudflare Git build. Deploying code
+> ahead of its migrations breaks any screen that reads a new column. `npm run
+> deploy` enforces the order; the runtime schema guard (status-strip alert +
+> `/health: "schema"`) catches it if it ever slips. See **DEPLOY.md**.
 
 Verify:
 

@@ -1,9 +1,10 @@
 import type { Settings } from '../config/defaults'
 import { getBreaker } from '../sequence/breaker'
+import { schemaState } from './schema'
 import { secretStatus, type SecretSource } from '../settings/store'
 
 export interface Alert {
-  kind: 'breaker_tripped' | 'gmail_disconnected' | 'api_key_missing' | 'cron_missed'
+  kind: 'breaker_tripped' | 'gmail_disconnected' | 'api_key_missing' | 'cron_missed' | 'schema_pending'
   message: string
 }
 
@@ -21,6 +22,17 @@ export async function evaluateAlerts(
   now: Date,
 ): Promise<Alert[]> {
   const alerts: Alert[] = []
+
+  // A database behind the deployed code breaks reads/writes that reference new
+  // columns. Surface it loudly and first — this is the guard for the exact gap
+  // where a deploy shipped code ahead of its migrations.
+  const schema = await schemaState(db)
+  if (schema.behind) {
+    alerts.push({
+      kind: 'schema_pending',
+      message: `Database update pending: applied ${schema.appliedLatest ?? 'none'}, code expects ${schema.expectedLatest}. Some screens may error until migrations are applied (npm run deploy, or wrangler d1 migrations apply).`,
+    })
+  }
 
   const breaker = await getBreaker(source.KV)
   if (breaker.tripped) {
