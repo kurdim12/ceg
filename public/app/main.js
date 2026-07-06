@@ -5,6 +5,7 @@ import { renderLeads } from './views/leads.js'
 import { renderCalls } from './views/calls.js'
 import { renderDrafts } from './views/drafts.js'
 import { renderInbox } from './views/inbox.js'
+import { renderCalendar } from './views/calendar.js'
 import { mountAssistant, setAssistantContext, openAssistant } from './assistant.js'
 import { renderRecap } from './views/recap.js'
 import { renderSettings } from './views/settings.js'
@@ -18,6 +19,7 @@ const ICONS = {
   calls: I('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.9.6 2.8.7a2 2 0 0 1 1.7 2z"/>'),
   drafts: I('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/>'),
   inbox: I('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z"/>'),
+  calendar: I('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'),
   agent: I('<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.3-.7L3 21l1.8-5.7A8.4 8.4 0 1 1 21 11.5z"/>'),
   recap: I('<path d="M3 3v18h18"/><path d="M7 13l4-4 4 4 5-6"/>'),
   deals: I('<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/>'),
@@ -30,6 +32,7 @@ const VIEWS = {
   calls: { label: 'Call queue', icon: 'calls', group: 'Work', title: 'Call queue', sub: 'Leads that need a phone call — one screen per lead.', render: renderCalls },
   drafts: { label: 'Review drafts', icon: 'drafts', group: 'Work', title: 'Review drafts', sub: 'Emails waiting for your approval before anything sends.', render: renderDrafts },
   inbox: { label: 'Inbox', icon: 'inbox', group: 'Work', title: 'Inbox', sub: 'Replies from leads, classified automatically.', render: renderInbox },
+  calendar: { label: 'Calendar', icon: 'calendar', group: 'Work', title: 'Calendar', sub: 'Every booked meeting, laid out by day.', render: renderCalendar },
   agent: { label: 'Assistant', icon: 'agent', group: 'Intelligence', title: 'Assistant', sub: 'Ask about your pipeline in plain language.', render: (root) => { root.innerHTML = ''; openAssistant() } },
   recap: { label: 'Daily recap', icon: 'recap', group: 'Intelligence', title: 'Daily recap', sub: 'The last 24 hours at a glance.', render: renderRecap },
   deals: { label: 'Deals', icon: 'deals', group: 'System', title: 'Deals', sub: 'Open, won, and lost deals with amounts.', render: renderDeals },
@@ -170,7 +173,7 @@ async function renderShell(me) {
       <div class="modal">
         <h2>More</h2>
         <div class="sheet-list">
-          ${['inbox', 'agent', 'deals', 'settings']
+          ${['inbox', 'calendar', 'agent', 'deals', 'settings']
             .map((k) => `<button data-view="${k}">${ICONS[VIEWS[k].icon]}<span>${VIEWS[k].label}</span></button>`)
             .join('')}
         </div>

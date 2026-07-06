@@ -551,6 +551,33 @@ tr:hover .row-actions { opacity: 1; }
   .assistant-drawer { width: 100%; }
 }
 
+/* ============ Calendar ============ */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+.cal-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.cal-nav { display: inline-flex; gap: 6px; align-items: center; }
+.cal-card { padding: 0; overflow: hidden; }
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.cal-weekdays > div { padding: 8px 10px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-cell { min-height: 104px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+.cal-cell:nth-child(7n) { border-right: 0; }
+.cal-daynum { font-size: 12px; color: var(--ink-2); align-self: flex-start; padding: 1px 5px; line-height: 1.4; }
+.cal-cell.other { background: var(--surface-2); }
+.cal-cell.other .cal-daynum { color: var(--faint); }
+.cal-cell.today .cal-daynum { background: var(--accent); color: #fff; border-radius: var(--r-sm); font-weight: 600; min-width: 20px; text-align: center; }
+.cal-ev { display: flex; align-items: center; gap: 5px; width: 100%; text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px 6px; min-height: 0; font-size: 12px; font-weight: 500; color: var(--ink); cursor: pointer; overflow: hidden; }
+.cal-ev:hover { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); }
+.cal-ev .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.cal-ev .t { color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.cal-ev:hover .t { color: var(--accent-text); }
+.cal-ev .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-more { font-size: 11px; color: var(--muted); padding-left: 4px; }
+@media (max-width: 900px) {
+  .cal-cell { min-height: 72px; padding: 4px; }
+  .cal-weekdays > div { padding: 6px; }
+  .cal-ev .t { display: none; }
+}
+
 /* ============ Kanban board ============ */
 .view-toggle button svg { margin-right: 4px; vertical-align: -2px; }
 .kanban { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }

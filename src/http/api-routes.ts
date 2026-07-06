@@ -205,6 +205,24 @@ apiRoutes.get('/deals', async (c) => {
   return c.json({ deals: rows.results })
 })
 
+/** Booked meetings for the calendar — company, contact, time, assignee. */
+apiRoutes.get('/meetings', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT m.id, m.company_id AS companyId, c.name AS companyName,
+            m.contact_id AS contactId, ct.name AS contactName, ct.email AS contactEmail,
+            m.scheduled_at AS scheduledAt, m.source, m.notes,
+            c.stage, c.city, c.timezone,
+            c.assignee_id AS assigneeId, u.name AS assigneeName
+     FROM meetings m
+     JOIN companies c ON c.id = m.company_id
+     LEFT JOIN contacts ct ON ct.id = m.contact_id
+     LEFT JOIN users u ON u.id = c.assignee_id
+     ORDER BY m.scheduled_at
+     LIMIT 500`,
+  ).all()
+  return c.json({ meetings: rows.results })
+})
+
 /** One company with its contacts + recent email thread — powers the record drawer. */
 apiRoutes.get('/companies/:id/detail', async (c) => {
   const id = Number(c.req.param('id'))
