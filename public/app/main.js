@@ -133,6 +133,10 @@ async function renderShell(me) {
     await api.post('/api/auth/logout')
     boot()
   })
+  // Records can ask to jump to another view (e.g. "Open in call screen").
+  window.addEventListener('goto-view', (e) => {
+    if (VIEWS[e.detail]) { current = e.detail; renderShell(me) }
+  }, { once: true })
   app.querySelectorAll('[data-view]').forEach((tab) => {
     tab.addEventListener('click', () => {
       current = tab.dataset.view

@@ -129,6 +129,39 @@ apiRoutes.get('/deals', async (c) => {
   return c.json({ deals: rows.results })
 })
 
+/** One company with its contacts + recent email thread — powers the record drawer. */
+apiRoutes.get('/companies/:id/detail', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const company = await c.env.DB.prepare(
+    `SELECT c.id, c.name, c.domain, c.website, c.city, c.country, c.timezone,
+            c.phone, c.phone_format_valid AS phoneFormatValid, c.phone_confirmed AS phoneConfirmed,
+            c.business_type AS businessType, c.stage, c.assignee_id AS assigneeId,
+            u.name AS assigneeName, c.created_at AS createdAt
+     FROM companies c LEFT JOIN users u ON u.id = c.assignee_id WHERE c.id = ?`,
+  )
+    .bind(id)
+    .first()
+  if (!company) return c.json({ error: 'no such company' }, 404)
+  const contacts = await c.env.DB.prepare(
+    `SELECT id, name, role, email, email_status AS emailStatus FROM contacts WHERE company_id = ? ORDER BY id`,
+  )
+    .bind(id)
+    .all()
+  const thread = await c.env.DB.prepare(
+    `SELECT direction, subject, body, status, triage, created_at AS createdAt
+     FROM email_messages WHERE company_id = ? ORDER BY id DESC LIMIT 20`,
+  )
+    .bind(id)
+    .all()
+  const deal = await c.env.DB.prepare(
+    `SELECT status, amount_usd_cents AS amountUsdCents FROM deals WHERE company_id = ? ORDER BY id DESC LIMIT 1`,
+  )
+    .bind(id)
+    .first()
+  return c.json({ company, contacts: contacts.results, thread: thread.results, deal })
+})
+
 /** Chart series for the daily recap: funnel, 14-day sends, reply mix. */
 apiRoutes.get('/recap/charts', async (c) => {
   const db = c.env.DB

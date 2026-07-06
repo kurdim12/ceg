@@ -2,6 +2,7 @@ import { api } from '../api.js'
 import { toast } from '../toast.js'
 import { timeChip } from '../timechip.js'
 import { confirmModal } from '../modal.js'
+import { openRecord } from '../drawer.js'
 
 const STAGES = [
   ['new', 'New'],
@@ -182,7 +183,7 @@ export async function renderLeads(root, ctx) {
       </table></div></div>`
 
     container.querySelectorAll('[data-open]').forEach((el) =>
-      el.addEventListener('click', () => drawDetail(el.dataset.open)))
+      el.addEventListener('click', () => openRecord(el.dataset.open, load)))
 
     container.querySelectorAll('select[data-stage-for]').forEach((sel) => {
       sel.addEventListener('change', async () => {
@@ -220,24 +221,6 @@ export async function renderLeads(root, ctx) {
         }
       })
     })
-  }
-
-  async function drawDetail(id) {
-    const { activities } = await api.get(`/api/companies/${id}/activities`)
-    const company = companies.find((c) => String(c.id) === String(id))
-    const detail = root.querySelector('#lead-detail')
-    detail.innerHTML = `
-      <h2>${esc(company?.name ?? 'Lead')} — activity</h2>
-      <div class="card">
-        ${activities.length === 0
-          ? '<div class="hint">No activity yet for this lead.</div>'
-          : activities.map((a) => `
-            <div class="activity">
-              <div>${esc(a.kind.replaceAll('_', ' '))}</div>
-              <div class="meta">${esc(a.actor)} · ${esc(a.createdAt)} UTC</div>
-            </div>`).join('')}
-      </div>`
-    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
   async function load() {

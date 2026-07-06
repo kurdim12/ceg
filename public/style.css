@@ -419,3 +419,37 @@ tr:hover .row-actions { opacity: 1; }
   .board-col { min-width: 84vw; scroll-snap-align: start; }
   .chart-grid { grid-template-columns: 1fr; }
 }
+
+/* ============ Record drawer (Frappe-style all-in-one) ============ */
+.drawer-overlay { position: fixed; inset: 0; z-index: 150; background: rgb(16 24 40 / 32%); display: flex; justify-content: flex-end; animation: fade var(--t); }
+.drawer-overlay.closing { animation: fade var(--t) reverse; }
+.drawer {
+  width: min(560px, 100%); height: 100%; background: var(--surface);
+  border-left: 1px solid var(--line); box-shadow: var(--sh-lg);
+  display: flex; flex-direction: column; animation: slide-in var(--t);
+}
+.drawer-overlay.closing .drawer { animation: slide-in var(--t) reverse; }
+@keyframes slide-in { from { transform: translateX(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.drawer-loading { padding: 40px; color: var(--muted); }
+.drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
+.rec-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rec-title .ini { width: 40px; height: 40px; border-radius: 11px; color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+.rec-title .nm { font-family: var(--font-display); font-weight: 600; font-size: 19px; letter-spacing: -0.01em; }
+.drawer-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.drawer-tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.drawer-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ink-2); font-weight: 550; font-size: 13.5px; padding: 12px 12px; min-height: 0; border-radius: 0; white-space: nowrap; }
+.drawer-tabs button:hover { color: var(--ink); }
+.drawer-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+.drawer-body { flex: 1; overflow-y: auto; padding: 20px 22px; }
+.drawer-foot { display: flex; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.rec-fields { margin: 0; display: grid; gap: 2px; }
+.rec-fields > div { display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.rec-fields dt { color: var(--muted); font-size: 13px; margin: 0; }
+.rec-fields dd { margin: 0; font-size: 14px; }
+.rec-contact { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.rec-contact .ini { width: 34px; height: 34px; border-radius: 9px; color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+.rec-contact .nm { font-weight: 600; }
+.rec-contact .chip { margin-left: auto; }
+.link { color: var(--accent); text-decoration: none; }
+.link:hover { text-decoration: underline; }
+@media (max-width: 900px) { .drawer { width: 100%; } .drawer-foot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); } }
