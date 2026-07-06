@@ -50,6 +50,7 @@ export async function renderSettings(root, ctx) {
   const paused = Boolean(sending.pause?.paused)
 
   const AUDIT_LABELS = {
+    login: 'Signed in',
     email_sent: 'Email sent', draft_approved: 'Draft approved', drafts_auto_approved: 'Drafts auto-approved',
     send_held_paused: 'Send held — paused', send_held_breaker: 'Send held — breaker',
     test_email_sent: 'Test email sent', test_email_dry_run: 'Test email (dry run)',
