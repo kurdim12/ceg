@@ -1,6 +1,14 @@
 import { activityStatement, logActivity } from './activities'
+import { findDuplicateCompany } from './dedupe'
 import { isStage, type Stage } from './stages'
 import { TransitionConflictError } from './transitions'
+
+/** A field edit or delete lost a compare-and-swap: someone else changed the row. */
+export class EditConflictError extends Error {
+  constructor(companyId: number) {
+    super(`edit conflict for company ${companyId} (someone else changed it — reload)`)
+  }
+}
 
 /** Fields an owner may set when hand-creating or editing a lead. */
 export interface CompanyInput {
@@ -70,10 +78,18 @@ export async function createCompany(
     const derived = deriveWebsite(input.website.trim())
     website = derived.website
     domain = derived.domain
-    if (domain) {
-      const clash = await db.prepare('SELECT id FROM companies WHERE domain = ?').bind(domain).first()
-      if (clash) throw new Error(`a company with domain "${domain}" already exists`)
-    }
+  }
+
+  // Reject a clear duplicate (domain, else phone, else name+city) so manual
+  // entry and sourcing can't pile up copies of the same business.
+  const dupe = await findDuplicateCompany(db, {
+    domain,
+    name,
+    city: input.city ?? null,
+    phone: input.phone ?? null,
+  })
+  if (dupe) {
+    throw new Error(`this looks like a duplicate of an existing lead (matched by ${dupe.reason})`)
   }
 
   const row = await db
@@ -116,6 +132,7 @@ export async function updateCompanyFields(
   companyId: number,
   patch: Record<string, unknown>,
   actor: string,
+  expectedRev?: number,
 ): Promise<{ updated: string[] }> {
   const sets: string[] = []
   const binds: Array<string | number | null> = []
@@ -151,14 +168,24 @@ export async function updateCompanyFields(
 
   if (sets.length === 0) throw new Error('no editable fields provided')
 
-  const exists = await db.prepare('SELECT id FROM companies WHERE id = ?').bind(companyId).first()
+  const exists = await db
+    .prepare('SELECT rev FROM companies WHERE id = ?')
+    .bind(companyId)
+    .first<{ rev: number }>()
   if (!exists) throw new Error('no such company')
 
+  // Bump the row version, and compare-and-swap on the caller's expected rev
+  // when supplied: a stale editor changes 0 rows and gets a conflict.
+  sets.push('rev = rev + 1')
+  let sql = `UPDATE companies SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`
   binds.push(companyId)
-  await db
-    .prepare(`UPDATE companies SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`)
-    .bind(...binds)
-    .run()
+  if (typeof expectedRev === 'number') {
+    sql += ' AND rev = ?'
+    binds.push(expectedRev)
+  }
+  const res = await db.prepare(sql).bind(...binds).run()
+  if ((res.meta.changes ?? 0) !== 1) throw new EditConflictError(companyId)
+
   await logActivity(db, {
     entityType: 'company',
     entityId: companyId,
@@ -219,12 +246,18 @@ export async function deleteCompany(
   db: D1Database,
   companyId: number,
   actor: string,
-): Promise<{ deleted: boolean; name: string | null }> {
+  expectedRev?: number,
+): Promise<{ deleted: boolean; name: string | null; conflict?: boolean }> {
   const company = await db
-    .prepare('SELECT name FROM companies WHERE id = ?')
+    .prepare('SELECT name, rev FROM companies WHERE id = ?')
     .bind(companyId)
-    .first<{ name: string }>()
+    .first<{ name: string; rev: number }>()
   if (!company) return { deleted: false, name: null }
+
+  // Refuse to delete a row that changed under a stale reader.
+  if (typeof expectedRev === 'number' && company.rev !== expectedRev) {
+    return { deleted: false, name: company.name, conflict: true }
+  }
 
   await db.batch([
     db.prepare('DELETE FROM drop_requests WHERE company_id = ?').bind(companyId),

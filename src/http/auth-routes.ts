@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { hashPassword, verifyPassword } from '../auth/password'
 import { createSession, destroySession } from '../auth/sessions'
+import { clearLoginRate, isLoginBlocked, recordLoginFailure } from '../auth/rate-limit'
 import { logActivity } from '../domain/activities'
 import type { Env } from '../env'
 
@@ -57,17 +58,28 @@ authRoutes.post('/setup', async (c) => {
 authRoutes.post('/login', async (c) => {
   const { email, password } = await c.req.json<{ email?: string; password?: string }>()
   if (!email || !password) return c.json({ error: 'email and password required' }, 400)
+  const id = email.toLowerCase()
+
+  // Brute-force throttle: checked BEFORE any password comparison, so a locked
+  // identifier reveals nothing about whether the account or password is valid.
+  if (await isLoginBlocked(c.env.KV, id)) {
+    await logActivity(c.env.DB, { entityType: 'user', actor: 'anon', kind: 'login_rate_limited', detail: { email: id } })
+    return c.json({ error: 'too many attempts — wait a few minutes and try again' }, 429)
+  }
 
   const user = await c.env.DB.prepare(
     'SELECT id, email, name, password_hash FROM users WHERE email = ?',
   )
-    .bind(email.toLowerCase())
+    .bind(id)
     .first<{ id: number; email: string; name: string; password_hash: string }>()
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
+    await recordLoginFailure(c.env.KV, id)
+    await logActivity(c.env.DB, { entityType: 'user', actor: 'anon', kind: 'login_failed', detail: { email: id } })
     return c.json({ error: 'invalid credentials' }, 401)
   }
 
+  await clearLoginRate(c.env.KV, id)
   const token = await createSession(c.env.KV, user, new Date())
   setCookie(c, 'session', token, {
     httpOnly: true,

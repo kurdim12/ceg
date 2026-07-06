@@ -104,7 +104,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       }
       const value = str(args, 'value')
       await ctx.db
-        .prepare(`UPDATE companies SET ${field} = ?, updated_at = datetime('now') WHERE id = ?`)
+        .prepare(`UPDATE companies SET ${field} = ?, rev = rev + 1, updated_at = datetime('now') WHERE id = ?`)
         .bind(value, id)
         .run()
       await logActivity(ctx.db, {

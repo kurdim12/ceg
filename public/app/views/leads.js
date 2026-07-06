@@ -229,11 +229,12 @@ export async function renderLeads(root, ctx) {
         })
         if (!go) return
         try {
-          await api.delete(`/api/companies/${id}`)
+          await api.delete(`/api/companies/${id}?rev=${c?.rev ?? 0}`)
           toast('Lead deleted', 'success')
           await load()
         } catch (err) {
           toast(err.message, 'error')
+          await load() // a 409 means it changed underneath — refresh to current
         }
       })
     })

@@ -2,6 +2,7 @@ import type { SiteFetcher, SourcedBusiness, VerifierAdapter } from '../adapters/
 import { domainOf } from '../crawler/extract'
 import { crawlForEmails } from '../crawler/crawl'
 import { logActivity } from '../domain/activities'
+import { findDuplicateCompany } from '../domain/dedupe'
 import { transitionStage } from '../domain/transitions'
 import { enrollContact } from '../sequence/enroll'
 import { pickAssignee } from './assign'
@@ -33,21 +34,23 @@ export async function ingestBusiness(
 ): Promise<IngestOutcome> {
   const domain = domainOf(biz.website)
 
-  if (domain) {
-    const existing = await db
-      .prepare('SELECT id FROM companies WHERE domain = ?')
-      .bind(domain)
-      .first<{ id: number }>()
-    if (existing) {
-      await logActivity(db, {
-        entityType: 'company',
-        entityId: existing.id,
-        actor: 'system:sourcing',
-        kind: 'sourcing_deduped',
-        detail: { domain },
-      })
-      return { kind: 'deduped', companyId: existing.id }
-    }
+  // Dedupe on domain, then (for websiteless businesses) phone, then name+city —
+  // so a nightly sourcing run can't keep re-creating the same shop.
+  const dupe = await findDuplicateCompany(db, {
+    domain,
+    name: biz.name,
+    city: biz.city,
+    phone: biz.phone,
+  })
+  if (dupe) {
+    await logActivity(db, {
+      entityType: 'company',
+      entityId: dupe.id,
+      actor: 'system:sourcing',
+      kind: 'sourcing_deduped',
+      detail: { matchedBy: dupe.reason, domain },
+    })
+    return { kind: 'deduped', companyId: dupe.id }
   }
 
   const assignee = await pickAssignee(db)

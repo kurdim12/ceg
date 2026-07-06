@@ -32,7 +32,7 @@ describe('create lead (manual entry)', () => {
     await expect(createLead(env.DB, { name: '   ' }, 'user:1')).rejects.toThrow(/name is required/)
     await createLead(env.DB, { name: 'First', website: 'dup.example' }, 'user:1')
     await expect(createLead(env.DB, { name: 'Second', website: 'https://www.dup.example/path' }, 'user:1'))
-      .rejects.toThrow(/already exists/)
+      .rejects.toThrow(/duplicate/)
   })
 
   it('POST /api/companies is auth-gated and validates the name', async () => {

@@ -188,7 +188,7 @@ export async function openRecord(companyId, onChange = () => {}) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault()
         editErr.textContent = ''
-        const patch = {}
+        const patch = { expectedRev: company.rev ?? 0 }
         form.querySelectorAll('[data-field]').forEach((el) => {
           const key = el.dataset.field
           if (key === 'assigneeId') patch[key] = el.value ? Number(el.value) : null
@@ -200,6 +200,7 @@ export async function openRecord(companyId, onChange = () => {}) {
         saveBtn.textContent = 'Saving…'
         try {
           await api.patch(`/api/companies/${companyId}`, patch)
+          company.rev = (company.rev ?? 0) + 1 // keep our optimistic token in step
           // Reflect edits locally so the drawer + list stay in sync without a reload.
           Object.assign(company, {
             name: patch.name, phone: patch.phone || null, city: patch.city || null,
@@ -244,7 +245,7 @@ export async function openRecord(companyId, onChange = () => {}) {
       })
       if (!go) return
       try {
-        await api.delete(`/api/companies/${companyId}`)
+        await api.delete(`/api/companies/${companyId}?rev=${company.rev ?? 0}`)
         toast('Lead deleted', 'success')
         close()
         onChange()

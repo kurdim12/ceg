@@ -50,7 +50,7 @@ export async function renderSettings(root, ctx) {
   const paused = Boolean(sending.pause?.paused)
 
   const AUDIT_LABELS = {
-    login: 'Signed in',
+    login: 'Signed in', login_failed: 'Failed sign-in', login_rate_limited: 'Sign-in blocked (rate limit)',
     email_sent: 'Email sent', send_claimed: 'Send claimed', send_failed: 'Send FAILED',
     send_needs_review: 'Send needs review', send_held_gmail: 'Send held — no inbox',
     bounce_matched: 'Bounce recorded', bounce_unmatched: 'Bounce (unmatched)',

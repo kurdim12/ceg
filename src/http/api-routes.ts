@@ -7,7 +7,7 @@ import { getSettings, isSecretName, secretStatus, setSecret, updateSettings } fr
 import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
 import { isStage } from '../domain/stages'
-import { createCompany, deleteCompany, setStageManual, updateCompanyFields } from '../domain/manual-ops'
+import { createCompany, deleteCompany, EditConflictError, setStageManual, updateCompanyFields } from '../domain/manual-ops'
 import { getPauseState, setSendingPaused } from '../ops/pause'
 import { runSourcing } from '../pipeline/source-run'
 import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breaker'
@@ -77,7 +77,7 @@ apiRoutes.put('/secrets/:name', async (c) => {
 
 apiRoutes.get('/companies', async (c) => {
   const rows = await c.env.DB.prepare(
-    `SELECT c.id, c.name, c.domain, c.city, c.country, c.timezone, c.stage,
+    `SELECT c.id, c.name, c.domain, c.city, c.country, c.timezone, c.stage, c.rev,
             c.assignee_id AS assigneeId, u.name AS assigneeName,
             c.phone, c.phone_format_valid AS phoneFormatValid,
             c.phone_confirmed AS phoneConfirmed, c.is_demo AS isDemo,
@@ -121,10 +121,13 @@ apiRoutes.patch('/companies/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
   const patch = await c.req.json<Record<string, unknown>>()
+  // Optional optimistic-concurrency token (the rev the client last read).
+  const expectedRev = typeof patch.expectedRev === 'number' ? patch.expectedRev : undefined
   try {
-    const result = await updateCompanyFields(c.env.DB, id, patch, `user:${c.get('session').userId}`)
+    const result = await updateCompanyFields(c.env.DB, id, patch, `user:${c.get('session').userId}`, expectedRev)
     return c.json({ ok: true, ...result })
   } catch (err) {
+    if (err instanceof EditConflictError) return c.json({ error: err.message }, 409)
     const msg = (err as Error).message
     return c.json({ error: msg }, msg === 'no such company' ? 404 : 400)
   }
@@ -157,7 +160,12 @@ apiRoutes.put('/companies/:id/stage', async (c) => {
 apiRoutes.delete('/companies/:id', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
-  const result = await deleteCompany(c.env.DB, id, `user:${c.get('session').userId}`)
+  const revParam = c.req.query('rev')
+  const expectedRev = revParam != null && /^\d+$/.test(revParam) ? Number(revParam) : undefined
+  const result = await deleteCompany(c.env.DB, id, `user:${c.get('session').userId}`, expectedRev)
+  if (result.conflict) {
+    return c.json({ error: 'this lead changed since you loaded it — reload and try again' }, 409)
+  }
   if (!result.deleted) return c.json({ error: 'no such company' }, 404)
   return c.json({ ok: true, name: result.name })
 })
@@ -197,7 +205,7 @@ apiRoutes.get('/companies/:id/detail', async (c) => {
   const id = Number(c.req.param('id'))
   if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
   const company = await c.env.DB.prepare(
-    `SELECT c.id, c.name, c.domain, c.website, c.city, c.country, c.timezone,
+    `SELECT c.id, c.name, c.domain, c.website, c.city, c.country, c.timezone, c.rev,
             c.phone, c.phone_format_valid AS phoneFormatValid, c.phone_confirmed AS phoneConfirmed,
             c.business_type AS businessType, c.stage, c.assignee_id AS assigneeId,
             u.name AS assigneeName, c.created_at AS createdAt
@@ -470,7 +478,8 @@ apiRoutes.get('/readiness', async (c) => {
  */
 apiRoutes.get('/audit', async (c) => {
   const KINDS = [
-    'login', 'email_sent', 'send_claimed', 'send_failed', 'send_needs_review',
+    'login', 'login_failed', 'login_rate_limited',
+    'email_sent', 'send_claimed', 'send_failed', 'send_needs_review',
     'send_held_paused', 'send_held_breaker', 'send_held_gmail',
     'draft_approved', 'drafts_auto_approved', 'test_email_sent', 'test_email_dry_run',
     'bounce_matched', 'bounce_unmatched',
