@@ -1,4 +1,4 @@
-name = "maranasi-engine"
+name = "ceg"
 main = "src/index.ts"
 compatibility_date = "2025-09-06"
 
