@@ -529,6 +529,26 @@ tr:hover .row-actions { opacity: 1; }
 .link:hover { text-decoration: underline; }
 @media (max-width: 900px) { .drawer { width: 100%; } .drawer-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom)); } }
 
+/* ============ Global assistant (launcher + slide-over) ============ */
+#assistant-launcher {
+  position: fixed; right: 24px; bottom: 24px; z-index: 140;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 16px 0 13px; border: 0; border-radius: var(--r-pill);
+  background: var(--accent); color: #fff; font-weight: 500; font-size: 13px;
+  box-shadow: var(--sh-md); cursor: pointer;
+  transition: background var(--t), transform var(--t);
+}
+#assistant-launcher:hover { background: var(--accent-hover); }
+#assistant-launcher:active { transform: translateY(1px); }
+#assistant-launcher svg { width: 18px; height: 18px; }
+.assistant-drawer { width: min(440px, 100%); }
+.rec-title .ini.asst-ini { background: var(--accent); color: #fff; }
+.drawer .assistant-panel { flex: 1; min-height: 0; border: 0; border-radius: 0; background: transparent; }
+@media (max-width: 900px) {
+  #assistant-launcher { bottom: calc(68px + env(safe-area-inset-bottom)); right: 16px; }
+  .assistant-drawer { width: 100%; }
+}
+
 /* ============ Kanban board ============ */
 .view-toggle button svg { margin-right: 4px; vertical-align: -2px; }
 .kanban { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }

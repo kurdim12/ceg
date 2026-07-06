@@ -385,12 +385,20 @@ apiRoutes.put('/me/booking-link', async (c) => {
 
 /** Chat with the CRM agent. It acts only through its tool registry. */
 apiRoutes.post('/agent/chat', async (c) => {
-  const { message, history } = await c.req.json<{
+  const { message, history, context } = await c.req.json<{
     message?: string
     history?: Array<{ role: 'user' | 'assistant'; text: string }>
+    context?: { view?: unknown; record?: { id?: unknown; name?: unknown } }
   }>()
   if (!message || message.trim() === '' || message.length > 4000) {
     return c.json({ error: 'message required (max 4000 chars)' }, 400)
+  }
+  // Screen context is a UI-provided hint (which view / which lead is open).
+  // Sanitised to safe primitives; the agent still re-reads by id before acting.
+  const screen: { view?: string; record?: { id: number; name: string } } = {}
+  if (typeof context?.view === 'string') screen.view = context.view.slice(0, 40)
+  if (context?.record && Number.isInteger(context.record.id) && typeof context.record.name === 'string') {
+    screen.record = { id: context.record.id as number, name: context.record.name.slice(0, 200) }
   }
   const turn = await runAgentChat(
     {
@@ -401,6 +409,7 @@ apiRoutes.post('/agent/chat', async (c) => {
     },
     message,
     Array.isArray(history) ? history : [],
+    screen,
   )
   return c.json(turn)
 })

@@ -2,6 +2,7 @@ import { api } from './api.js'
 import { toast } from './toast.js'
 import { confirmModal } from './modal.js'
 import { timeChip } from './timechip.js'
+import { setAssistantContext, openAssistant } from './assistant.js'
 
 // Frappe-style all-in-one record drawer: slides in from the right with
 // tabs (Details · Contacts · Emails · Activity). Opened from any list.
@@ -33,6 +34,7 @@ export async function openRecord(companyId, onChange = () => {}) {
   const panel = host.querySelector('.drawer')
 
   function close() {
+    setAssistantContext({ record: null })
     host.classList.add('closing')
     setTimeout(() => host.remove(), 160)
   }
@@ -49,6 +51,8 @@ export async function openRecord(companyId, onChange = () => {}) {
     return
   }
   const { company, contacts, thread, deal } = data
+  // Tell the global assistant which lead is open, so "this lead" resolves here.
+  setAssistantContext({ record: { id: Number(companyId), name: company.name } })
   let tab = 'details'
   let editing = false
   let users = null
@@ -154,6 +158,7 @@ export async function openRecord(companyId, onChange = () => {}) {
       <div class="drawer-tabs">${TABS.map(([k, l]) => `<button class="${k === tab ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div class="drawer-body" id="rec-body"></div>
       <div class="drawer-foot">
+        <button class="secondary" id="rec-ask">Ask assistant</button>
         <button class="secondary" id="rec-call">Open in call screen</button>
         <button class="danger" id="rec-delete">Delete lead</button>
       </div>`
@@ -203,6 +208,7 @@ export async function openRecord(companyId, onChange = () => {}) {
             assigneeId: patch.assigneeId ?? null,
             assigneeName: (users ?? []).find((u) => u.id === patch.assigneeId)?.name ?? null,
           })
+          setAssistantContext({ record: { id: Number(companyId), name: company.name } })
           toast('Lead updated', 'success')
           editing = false
           render()
@@ -249,6 +255,14 @@ export async function openRecord(companyId, onChange = () => {}) {
     panel.querySelector('#rec-call').addEventListener('click', () => {
       close()
       window.dispatchEvent(new CustomEvent('goto-view', { detail: 'calls' }))
+    })
+    panel.querySelector('#rec-ask').addEventListener('click', () => {
+      // Close the record panel for a clean assistant view, but keep its context
+      // so "this lead" still resolves here (close() clears it, so restore after).
+      const rec = { id: Number(companyId), name: company.name }
+      close()
+      setAssistantContext({ record: rec })
+      openAssistant(`About ${company.name}: `)
     })
   }
   await render()

@@ -5,7 +5,7 @@ import { renderLeads } from './views/leads.js'
 import { renderCalls } from './views/calls.js'
 import { renderDrafts } from './views/drafts.js'
 import { renderInbox } from './views/inbox.js'
-import { renderAgent } from './views/agent.js'
+import { mountAssistant, setAssistantContext, openAssistant } from './assistant.js'
 import { renderRecap } from './views/recap.js'
 import { renderSettings } from './views/settings.js'
 import { renderDeals } from './views/deals.js'
@@ -30,7 +30,7 @@ const VIEWS = {
   calls: { label: 'Call queue', icon: 'calls', group: 'Work', title: 'Call queue', sub: 'Leads that need a phone call — one screen per lead.', render: renderCalls },
   drafts: { label: 'Review drafts', icon: 'drafts', group: 'Work', title: 'Review drafts', sub: 'Emails waiting for your approval before anything sends.', render: renderDrafts },
   inbox: { label: 'Inbox', icon: 'inbox', group: 'Work', title: 'Inbox', sub: 'Replies from leads, classified automatically.', render: renderInbox },
-  agent: { label: 'Assistant', icon: 'agent', group: 'Intelligence', title: 'Assistant', sub: 'Ask about your pipeline in plain language.', render: renderAgent },
+  agent: { label: 'Assistant', icon: 'agent', group: 'Intelligence', title: 'Assistant', sub: 'Ask about your pipeline in plain language.', render: (root) => { root.innerHTML = ''; openAssistant() } },
   recap: { label: 'Daily recap', icon: 'recap', group: 'Intelligence', title: 'Daily recap', sub: 'The last 24 hours at a glance.', render: renderRecap },
   deals: { label: 'Deals', icon: 'deals', group: 'System', title: 'Deals', sub: 'Open, won, and lost deals with amounts.', render: renderDeals },
   settings: { label: 'Settings', icon: 'settings', group: 'System', title: 'Settings', sub: 'Sending rules, connections, keys, and safety switches.', render: renderSettings },
@@ -154,6 +154,8 @@ async function renderShell(me) {
   window.addEventListener('goto-view', gotoHandler)
   app.querySelectorAll('[data-view]').forEach((tab) => {
     tab.addEventListener('click', () => {
+      // The assistant is global — open it in place, don't navigate away.
+      if (tab.dataset.view === 'agent') { openAssistant(); return }
       current = tab.dataset.view
       renderShell(me)
     })
@@ -174,13 +176,18 @@ async function renderShell(me) {
       if (e.target === overlay) overlay.remove()
       const btn = e.target.closest('[data-view]')
       if (btn) {
-        current = btn.dataset.view
         overlay.remove()
+        if (btn.dataset.view === 'agent') { openAssistant(); return }
+        current = btn.dataset.view
         renderShell(me)
       }
     })
     document.body.appendChild(overlay)
   })
+
+  // The assistant lives above every screen; keep it aware of where we are.
+  mountAssistant()
+  setAssistantContext({ view: current, record: null })
 
   const viewRoot = app.querySelector('#view')
   viewRoot.innerHTML = '<div class="skeleton"></div>'
