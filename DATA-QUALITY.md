@@ -28,6 +28,23 @@ the audit trail are untouched.
   (`src/domain/manual-ops.ts`), so sourcing and manual create dedupe on the same
   normalized domain.
 
+## postal-mime (inbound email / bounces)
+
+- **Adapter:** `InboundParser` in `src/adapters/inbound.ts`.
+- **Used for:** parsing raw RFC822 inbound mail into `{ fromEmail, subject,
+  text, dsn }`. Correctly handles multipart bodies, transfer encodings, and —
+  the key win — the **`message/delivery-status`** part of a bounce, extracting
+  the structured `Final-Recipient / Action / Status`. A naive body walk drops
+  that part, so real bounces were only caught heuristically before.
+- **Where:** `src/adapters/gmail-reader.ts` now fetches Gmail `format=raw` and
+  parses with postal-mime. The structured `dsn` flows through `InboundEmail`
+  into `parseBounce` (`src/inbox/bounce.ts`), which trusts it when present and
+  falls back to the deterministic sender/subject/body heuristics otherwise.
+  Bounce **attribution** (mark message bounced → invalidate contact → stop the
+  sequence → feed the breaker) is unchanged and still ours.
+- **Fail-safe:** a parse failure returns empty fields (never throws), so one
+  malformed message can't break an inbox poll.
+
 ## zod (validation)
 
 - **Helpers:** `parseBody` + schemas `S.*` in `src/http/validate.ts`;

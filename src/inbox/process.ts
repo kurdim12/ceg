@@ -12,6 +12,8 @@ export interface InboundEmail {
   subject: string
   body: string
   toUserId: number
+  /** Structured delivery-status from the MIME parser, if this is a bounce. */
+  dsn?: import('../adapters/inbound').ParsedDsn | null
 }
 
 export interface ProcessDeps {

@@ -131,6 +131,7 @@ async function pollConnectedInboxes(
             subject: msg.subject,
             body: msg.body,
             toUserId: owner.id,
+            dsn: msg.dsn,
           },
         )
       }

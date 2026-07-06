@@ -6,6 +6,8 @@
  * that actually failed so the bounce can be attributed to a real outbound send.
  */
 
+import type { ParsedDsn } from '../adapters/inbound'
+
 export interface BounceParse {
   isBounce: boolean
   /** The recipient that failed, lower-cased, or null if unparseable. */
@@ -49,11 +51,19 @@ export function parseBounce(inbound: {
   fromEmail: string
   subject: string
   body: string
+  dsn?: ParsedDsn | null
 }): BounceParse {
   const from = inbound.fromEmail ?? ''
   const subject = inbound.subject ?? ''
   const body = inbound.body ?? ''
 
+  // A structured delivery-status part (from the MIME parser) is authoritative.
+  const dsn = inbound.dsn
+  if (dsn && (dsn.finalRecipient || dsn.action === 'failed' || (dsn.status ?? '').startsWith('5'))) {
+    return { isBounce: true, failedRecipient: dsn.finalRecipient ?? extractFailedRecipient(body, from) }
+  }
+
+  // Otherwise fall back to deterministic detection over the sender/subject/body.
   const looksLikeBounce =
     DAEMON_RE.test(from) || DAEMON_RE.test(subject) || DSN_SUBJECT_RE.test(subject) || DSN_BODY_RE.test(body)
 
