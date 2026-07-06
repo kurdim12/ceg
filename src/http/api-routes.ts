@@ -7,7 +7,7 @@ import { getSettings, isSecretName, secretStatus, setSecret, updateSettings } fr
 import { resetDemoData } from '../demo/seed'
 import { logActivity } from '../domain/activities'
 import { isStage } from '../domain/stages'
-import { deleteCompany, setStageManual } from '../domain/manual-ops'
+import { createCompany, deleteCompany, setStageManual, updateCompanyFields } from '../domain/manual-ops'
 import { runSourcing } from '../pipeline/source-run'
 import { evaluateBounceRate, getBreaker, resetBreaker } from '../sequence/breaker'
 import { approveDraft, approvedOutboundCount, isReviewModeActive, REVIEW_MODE_THRESHOLD } from '../sequence/review-mode'
@@ -18,9 +18,30 @@ export const apiRoutes = new Hono<{ Bindings: Env; Variables: AuthVars }>()
 
 apiRoutes.use('*', requireAuth)
 
-apiRoutes.get('/me', (c) => {
+apiRoutes.get('/me', async (c) => {
   const s = c.get('session')
-  return c.json({ id: s.userId, email: s.email, name: s.name })
+  // Surface the owner's own Gmail-connection + booking-link state so the UI
+  // can show a real status instead of a bare Connect button.
+  const row = await c.env.DB.prepare(
+    'SELECT gmail_connected AS gmailConnected, booking_link AS bookingLink FROM users WHERE id = ?',
+  )
+    .bind(s.userId)
+    .first<{ gmailConnected: number; bookingLink: string | null }>()
+  return c.json({
+    id: s.userId,
+    email: s.email,
+    name: s.name,
+    gmailConnected: Boolean(row?.gmailConnected),
+    bookingLink: row?.bookingLink ?? null,
+  })
+})
+
+/** The owner accounts — powers assignee pickers on create/edit. */
+apiRoutes.get('/users', async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, email FROM users WHERE role = 'owner_admin' ORDER BY id",
+  ).all()
+  return c.json({ users: rows.results })
 })
 
 apiRoutes.get('/settings', async (c) => {
@@ -65,6 +86,47 @@ apiRoutes.get('/companies', async (c) => {
      LIMIT 200`,
   ).all()
   return c.json({ companies: rows.results })
+})
+
+/** Owner-created lead (manual entry). Fields are optional except the name. */
+apiRoutes.post('/companies', async (c) => {
+  const body = await c.req.json<Record<string, unknown>>()
+  if (typeof body.name !== 'string' || body.name.trim() === '' || body.name.length > 200) {
+    return c.json({ error: 'name is required (max 200 chars)' }, 400)
+  }
+  try {
+    const { id } = await createCompany(
+      c.env.DB,
+      {
+        name: body.name,
+        website: typeof body.website === 'string' ? body.website : null,
+        city: typeof body.city === 'string' ? body.city : null,
+        country: typeof body.country === 'string' ? body.country : null,
+        timezone: typeof body.timezone === 'string' ? body.timezone : null,
+        phone: typeof body.phone === 'string' ? body.phone : null,
+        businessType: typeof body.businessType === 'string' ? body.businessType : null,
+        assigneeId: typeof body.assigneeId === 'number' ? body.assigneeId : null,
+      },
+      `user:${c.get('session').userId}`,
+    )
+    return c.json({ ok: true, id }, 201)
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400)
+  }
+})
+
+/** Owner edit of allowlisted lead fields (name, phone, city, country, website, type, assignee). */
+apiRoutes.patch('/companies/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id)) return c.json({ error: 'bad id' }, 400)
+  const patch = await c.req.json<Record<string, unknown>>()
+  try {
+    const result = await updateCompanyFields(c.env.DB, id, patch, `user:${c.get('session').userId}`)
+    return c.json({ ok: true, ...result })
+  } catch (err) {
+    const msg = (err as Error).message
+    return c.json({ error: msg }, msg === 'no such company' ? 404 : 400)
+  }
 })
 
 /** Owner-initiated manual stage change — any stage, CAS-guarded, audited. */

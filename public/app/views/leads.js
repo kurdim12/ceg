@@ -62,7 +62,8 @@ export async function renderLeads(root, ctx) {
       </div>
     </div>
     <div class="view-actions">
-      <button id="run-sourcing">Find new leads</button>
+      <button id="add-lead">Add lead</button>
+      <button class="secondary" id="run-sourcing">Find new leads</button>
       <button class="ghost" id="demo-reset">Regenerate demo data</button>
     </div>
     <div id="sourcing-form"></div>
@@ -101,6 +102,11 @@ export async function renderLeads(root, ctx) {
       e.target.disabled = false
     }
   })
+
+  root.querySelector('#add-lead').addEventListener('click', () => openAddLead(async (id) => {
+    await load()
+    if (id) openRecord(String(id), load)
+  }))
 
   root.querySelector('#run-sourcing').addEventListener('click', () => {
     const holder = root.querySelector('#sourcing-form')
@@ -319,4 +325,88 @@ export async function renderLeads(root, ctx) {
 
   await load()
   void ctx
+}
+
+/**
+ * "Add lead" modal — a manual company create. Name is required; every other
+ * field is optional. Assignees come from /api/users. onDone(newId) fires on
+ * a successful create.
+ */
+async function openAddLead(onDone = () => {}) {
+  let users = []
+  try {
+    users = (await api.get('/api/users')).users
+  } catch {
+    /* assignee stays optional if the list can't load */
+  }
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal panel" role="dialog" aria-modal="true" aria-label="Add lead">
+      <h2>Add a lead</h2>
+      <form id="add-lead-form">
+        <label>Company name <span style="color:var(--red)">*</span>
+          <input id="al-name" required maxlength="200" placeholder="e.g. Harbor Textiles" autocomplete="off" />
+        </label>
+        <div class="form-grid">
+          <label>Business type<input id="al-type" placeholder="e.g. textile manufacturer" /></label>
+          <label>Phone<input id="al-phone" placeholder="+1 212 555 0100" /></label>
+          <label>City<input id="al-city" placeholder="e.g. New York" /></label>
+          <label>Country<input id="al-country" placeholder="e.g. US" /></label>
+        </div>
+        <label>Website<input id="al-website" placeholder="example.com" /></label>
+        <label>Assignee
+          <select id="al-assignee">
+            <option value="">Unassigned</option>
+            ${users.map((u) => `<option value="${u.id}">${escAttr(u.name)}</option>`).join('')}
+          </select>
+        </label>
+        <p class="error-text" id="al-error"></p>
+        <div class="modal-actions">
+          <button type="button" class="secondary" id="al-cancel">Cancel</button>
+          <button type="submit" id="al-save">Create lead</button>
+        </div>
+      </form>
+    </div>`
+  document.body.appendChild(overlay)
+  const err = overlay.querySelector('#al-error')
+  const close = () => overlay.remove()
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+  overlay.querySelector('#al-cancel').addEventListener('click', close)
+  overlay.querySelector('#al-name').focus()
+
+  overlay.querySelector('#add-lead-form').addEventListener('submit', async (e) => {
+    e.preventDefault()
+    err.textContent = ''
+    const name = overlay.querySelector('#al-name').value.trim()
+    if (!name) { err.textContent = 'A company name is required.'; return }
+    const assignee = overlay.querySelector('#al-assignee').value
+    const save = overlay.querySelector('#al-save')
+    save.disabled = true
+    save.textContent = 'Creating…'
+    try {
+      const res = await api.post('/api/companies', {
+        name,
+        businessType: overlay.querySelector('#al-type').value.trim() || undefined,
+        phone: overlay.querySelector('#al-phone').value.trim() || undefined,
+        city: overlay.querySelector('#al-city').value.trim() || undefined,
+        country: overlay.querySelector('#al-country').value.trim() || undefined,
+        website: overlay.querySelector('#al-website').value.trim() || undefined,
+        assigneeId: assignee ? Number(assignee) : undefined,
+      })
+      toast(`${name} added`, 'success')
+      close()
+      onDone(res.id)
+    } catch (e2) {
+      err.textContent = e2.message
+      save.disabled = false
+      save.textContent = 'Create lead'
+    }
+  })
+}
+
+function escAttr(text) {
+  const div = document.createElement('div')
+  div.textContent = text ?? ''
+  return div.innerHTML
 }

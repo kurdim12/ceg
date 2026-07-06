@@ -30,6 +30,9 @@ const FIELD_LABELS = [
 export async function renderSettings(root, ctx) {
   const data = await api.get('/api/settings')
   const breaker = await api.get('/api/breaker')
+  // The signed-in owner's own connection state (Gmail + booking link).
+  const me = ctx.me ?? (await api.get('/api/me'))
+  const gmailConnected = Boolean(me.gmailConnected)
 
   root.innerHTML = `
     <h2>Sending</h2>
@@ -71,15 +74,16 @@ export async function renderSettings(root, ctx) {
         )
         .join('')}
       <div class="secret-row">
-        <span class="lbl">Your Gmail (sends your sequences)</span>
+        <span class="lbl">Your Gmail (sends your sequences)
+          ${gmailConnected ? '<span class="chip live">connected</span>' : '<span class="chip holding">not connected</span>'}</span>
         <span class="ctl">
-          <button class="secondary" id="gmail-connect">Connect my Gmail</button>
-          <button class="secondary" id="gmail-disconnect">Disconnect</button>
+          <button class="secondary" id="gmail-connect">${gmailConnected ? 'Reconnect' : 'Connect my Gmail'}</button>
+          ${gmailConnected ? '<button class="secondary" id="gmail-disconnect">Disconnect</button>' : ''}
         </span>
       </div>
       <div class="secret-row">
         <span class="lbl">Your booking link (goes into replies)</span>
-        <span class="ctl input-group"><input id="booking-link" placeholder="https://cal.com/you/15min" />
+        <span class="ctl input-group"><input id="booking-link" placeholder="https://cal.com/you/15min" value="${esc(me.bookingLink ?? '')}" />
         <button class="secondary" id="save-booking">Save link</button></span>
       </div>
     </div>
@@ -154,7 +158,7 @@ export async function renderSettings(root, ctx) {
       toast(err.message, 'error')
     }
   })
-  root.querySelector('#gmail-disconnect').addEventListener('click', async () => {
+  root.querySelector('#gmail-disconnect')?.addEventListener('click', async () => {
     const go = await confirmModal({
       title: 'Disconnect Gmail?',
       body: 'Your sequences hold until you reconnect.',

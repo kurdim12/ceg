@@ -50,6 +50,18 @@ export async function openRecord(companyId, onChange = () => {}) {
   }
   const { company, contacts, thread, deal } = data
   let tab = 'details'
+  let editing = false
+  let users = null
+
+  const EDIT_FIELDS = [
+    ['name', 'Company name'],
+    ['businessType', 'Business type'],
+    ['phone', 'Phone'],
+    ['city', 'City'],
+    ['country', 'Country'],
+    ['website', 'Website'],
+    ['timezone', 'Timezone (IANA, e.g. Europe/Warsaw)'],
+  ]
 
   function detailsTab() {
     const rows = [
@@ -65,6 +77,30 @@ export async function openRecord(companyId, onChange = () => {}) {
     ]
     if (deal) rows.splice(1, 0, ['Deal', `${esc(deal.status)} · <span class="mono">${deal.amountUsdCents != null ? usd.format(deal.amountUsdCents / 100) : 'no amount'}</span>`])
     return `<dl class="rec-fields">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`
+  }
+  function detailsEdit() {
+    const val = (key) => {
+      const source = key === 'businessType' ? company.businessType : company[key]
+      return esc(source ?? '')
+    }
+    return `
+      <form id="rec-edit">
+        ${EDIT_FIELDS.map(([key, label]) => `
+          <label>${label}${key === 'name' ? ' <span style="color:var(--red)">*</span>' : ''}
+            <input data-field="${key}" value="${val(key)}" ${key === 'name' ? 'required maxlength="200"' : ''} autocomplete="off" />
+          </label>`).join('')}
+        <label>Assignee
+          <select data-field="assigneeId">
+            <option value="">Unassigned</option>
+            ${(users ?? []).map((u) => `<option value="${u.id}" ${u.id === company.assigneeId ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+          </select>
+        </label>
+        <p class="error-text" id="rec-edit-error"></p>
+        <div class="modal-actions" style="justify-content:flex-start">
+          <button type="submit" id="rec-save">Save changes</button>
+          <button type="button" class="secondary" id="rec-cancel">Cancel</button>
+        </div>
+      </form>`
   }
   function contactsTab() {
     if (contacts.length === 0) return '<div class="hint" style="padding:8px 0">No contacts on record.</div>'
@@ -107,6 +143,9 @@ export async function openRecord(companyId, onChange = () => {}) {
           <span class="stage-select"><select id="rec-stage" aria-label="Change stage">
             ${STAGES.map(([v, l]) => `<option value="${v}" ${v === company.stage ? 'selected' : ''}>${l}</option>`).join('')}
           </select></span>
+          <button class="icon-btn" id="rec-edit-toggle" aria-label="Edit lead" title="Edit lead">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+          </button>
           <button class="icon-btn" id="rec-close" aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
@@ -120,13 +159,61 @@ export async function openRecord(companyId, onChange = () => {}) {
       </div>`
 
     const body = panel.querySelector('#rec-body')
-    body.innerHTML = tab === 'details' ? detailsTab()
+    body.innerHTML = tab === 'details' ? (editing ? detailsEdit() : detailsTab())
       : tab === 'contacts' ? contactsTab()
       : tab === 'emails' ? emailsTab()
       : '<div class="hint">Loading…</div>'
     if (tab === 'activity') body.innerHTML = await activityTab()
 
     panel.querySelector('#rec-close').addEventListener('click', close)
+
+    panel.querySelector('#rec-edit-toggle').addEventListener('click', async () => {
+      if (!editing && users === null) {
+        try { users = (await api.get('/api/users')).users } catch { users = [] }
+      }
+      editing = !editing
+      tab = 'details'
+      render()
+    })
+
+    if (editing && tab === 'details') {
+      const form = panel.querySelector('#rec-edit')
+      const editErr = panel.querySelector('#rec-edit-error')
+      panel.querySelector('#rec-cancel').addEventListener('click', () => { editing = false; render() })
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        editErr.textContent = ''
+        const patch = {}
+        form.querySelectorAll('[data-field]').forEach((el) => {
+          const key = el.dataset.field
+          if (key === 'assigneeId') patch[key] = el.value ? Number(el.value) : null
+          else patch[key] = el.value.trim()
+        })
+        if (!patch.name) { editErr.textContent = 'A company name is required.'; return }
+        const saveBtn = panel.querySelector('#rec-save')
+        saveBtn.disabled = true
+        saveBtn.textContent = 'Saving…'
+        try {
+          await api.patch(`/api/companies/${companyId}`, patch)
+          // Reflect edits locally so the drawer + list stay in sync without a reload.
+          Object.assign(company, {
+            name: patch.name, phone: patch.phone || null, city: patch.city || null,
+            country: patch.country || null, website: patch.website || null,
+            businessType: patch.businessType || null, timezone: patch.timezone || null,
+            assigneeId: patch.assigneeId ?? null,
+            assigneeName: (users ?? []).find((u) => u.id === patch.assigneeId)?.name ?? null,
+          })
+          toast('Lead updated', 'success')
+          editing = false
+          render()
+          onChange()
+        } catch (err) {
+          editErr.textContent = err.message
+          saveBtn.disabled = false
+          saveBtn.textContent = 'Save changes'
+        }
+      })
+    }
     panel.querySelectorAll('.drawer-tabs button').forEach((b) =>
       b.addEventListener('click', () => { tab = b.dataset.tab; render() }))
 

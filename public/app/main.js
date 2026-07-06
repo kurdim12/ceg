@@ -40,6 +40,7 @@ const TABBAR = ['leads', 'calls', 'drafts', 'recap']
 
 let current = 'leads'
 let ticker = null
+let gotoHandler = null
 
 function esc(text) {
   const div = document.createElement('div')
@@ -134,9 +135,10 @@ async function renderShell(me) {
     boot()
   })
   // Records can ask to jump to another view (e.g. "Open in call screen").
-  window.addEventListener('goto-view', (e) => {
-    if (VIEWS[e.detail]) { current = e.detail; renderShell(me) }
-  }, { once: true })
+  // One stable handler, replaced each render — never stacked.
+  if (gotoHandler) window.removeEventListener('goto-view', gotoHandler)
+  gotoHandler = (e) => { if (VIEWS[e.detail]) { current = e.detail; renderShell(me) } }
+  window.addEventListener('goto-view', gotoHandler)
   app.querySelectorAll('[data-view]').forEach((tab) => {
     tab.addEventListener('click', () => {
       current = tab.dataset.view
